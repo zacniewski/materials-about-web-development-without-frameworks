@@ -1,0 +1,27 @@
+{
+  "name": "task-board",
+  "version": "1.0.0",
+  "description": "Reference app for the course: node:http + custom router + Prisma + PostgreSQL + Bootstrap + HTMX",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node --watch --env-file=.env src/server.js",
+    "start": "node --env-file=.env src/server.js",
+    "test": "node --test",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "node --env-file=.env prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
+  },
+  "engines": {
+    "node": ">=20.6"
+  }
+}
