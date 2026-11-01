@@ -2,6 +2,22 @@
 
 **Goals:** validate all input on the server, harden the app with security headers, and write unit and integration tests using only Node core.
 
+### In plain words
+- **Validation** is the bouncer at the club door. HTML `required` is just a sign saying "no sneakers", and anyone can ignore it (with curl, DevTools...). The server bouncer actually checks every guest.
+- **Security** is about locking every door, not just the front one. The OWASP Top 10 is a checklist of the doors burglars use most often.
+- **Security headers** are instructions you pin on your house for the browser: "only run scripts from these addresses" (CSP), "don't put my page inside someone else's frame".
+- **Rate limiting** is a shop allowing only 10 customers a minute through the door, which stops a password-guessing robot.
+- **Tests** are a smoke alarm. You hope it never rings, but when you change something it tells you immediately if you broke the house.
+
+More terms in the [glossary](../resources/glossary.md).
+
+```mermaid
+flowchart LR
+  R["Request"] --> H["security headers"] --> RL["rate limit"] --> S["session + CSRF"] --> A["requireAuth / ownership"] --> V["validate input"] --> DB[("Prisma / DB")]
+  DB --> VIEW["escape output (html tag)"] --> RESP["Response"]
+```
+Each layer catches something the others miss. This is called **defence in depth**.
+
 ### 1. Validation
 Trust nothing from the client: body, query, params, headers, cookies.
 ```js
@@ -109,9 +125,136 @@ Run with `node --test`, `node --test --watch` or `node --test --experimental-tes
 
 For DB tests use a separate `taskboard_test` database: `DATABASE_URL=... npx prisma migrate reset --force`, then run the tests.
 
+### 6. More theory: XSS and why escaping works
+**Cross-site scripting (XSS)** happens when user text is put into HTML *as code*. If a task title is `<img src=x onerror=alert(document.cookie)>` and we concatenate it into the page, every visitor runs that script. **Escaping** turns `<` into `&lt;`, `>` into `&gt;`, `"` into `&quot;` and so on, so the browser shows the characters instead of interpreting them. CSP is the second line of defence: even if something slips through, the browser refuses to run scripts from unapproved sources.
+
+```mermaid
+sequenceDiagram
+  participant A as Attacker
+  participant S as Server
+  participant V as Victim browser
+  A->>S: POST task title = "<script>steal()</script>"
+  S->>S: store as plain text (fine)
+  V->>S: GET /boards/1
+  alt rendered with plain string concat
+    S-->>V: <li><script>steal()</script></li>
+    V->>V: script runs!
+  else rendered with html tag (escaped)
+    S-->>V: li containing escaped text (lt-script-gt as entities)
+    V->>V: text displayed, nothing runs
+  end
+```
+
+**What to test where:**
+| Layer | Example | Test type |
+|-------|---------|-----------|
+| pure function | `validateTask`, `parseCookies`, `html` escaping | unit |
+| middleware | `securityHeaders` sets CSP | integration (fetch, check headers) |
+| route + DB | `POST /boards/1/tasks` creates a row | integration with test DB |
+| access control | user A gets 404 on B's board | integration |
+| full UI flow | log in, add a task, see it | E2E (optional, e.g. Playwright) |
+
+### 7. Worked example: unit-testing a validator (Arrange, Act, Assert)
+```js
+// test/validation.test.js
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { validateTask } from '../src/validation.js';
+
+describe('validateTask', () => {
+  test('accepts a normal title and trims it', () => {
+    // Arrange: build the input
+    const input = { title: '  Buy milk  ' };
+    // Act: call the code under test
+    const r = validateTask(input);
+    // Assert: check the outcome
+    assert.equal(r.ok, true);
+    assert.equal(r.values.title, 'Buy milk');
+  });
+
+  test('rejects an empty title', () => {
+    const r = validateTask({ title: '   ' });
+    assert.equal(r.ok, false);
+    assert.match(r.errors.title, /required/i);   // regex: don't depend on exact wording
+  });
+
+  test('rejects a 201-character title', () => {
+    const r = validateTask({ title: 'x'.repeat(201) });  // boundary value: max + 1
+    assert.equal(r.ok, false);
+  });
+});
+```
+Test **boundaries** (0, 1, 200, 201 characters), not just the "happy path".
+
+### 8. Worked example: integration test for headers and access control
+```js
+// test/security.test.js
+import { before, after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from '../src/app.js';
+
+let server, base;
+before(async () => {
+  server = createServer();
+  await new Promise((r) => server.listen(0, r));     // port 0 = any free port
+  base = `http://127.0.0.1:${server.address().port}`;
+});
+after(() => server.close());
+
+test('responses carry security headers', async () => {
+  const res = await fetch(`${base}/health`);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.ok(res.headers.get('content-security-policy')?.includes("default-src 'self'"));
+});
+
+test('anonymous user is redirected away from /boards', async () => {
+  const res = await fetch(`${base}/boards`, { redirect: 'manual' }); // don't follow the 303
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get('location'), '/login');
+});
+
+test('POST without CSRF token is rejected', async () => {
+  const res = await fetch(`${base}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'email=a%40b.c&password=x',
+    redirect: 'manual',
+  });
+  assert.ok([401, 403, 422].includes(res.status));   // never 200/303 for a bad login
+});
+```
+Adapt the exact paths and statuses to the reference app's `test/` folder.
+
+```mermaid
+flowchart LR
+  W["write failing test"] --> C["write minimal code"] --> P["test passes"] --> RF["refactor safely"] --> W
+```
+
+### Common beginner mistakes
+- **Relying on client-side checks only** (`required`, `maxlength`, JS validation).
+- **Validating but not normalising**, e.g. not trimming, or treating `"5"` and `5` the same by accident.
+- **Showing stack traces or Prisma errors to users**, which leaks internals (A05).
+- **Building HTML with plain template literals**, which leads to XSS.
+- **Adding `'unsafe-inline'` to CSP "to make it work"** without understanding the trade-off.
+- **Rate limiting by a header the client controls** (`X-Forwarded-For` without a trusted proxy).
+- **Tests that depend on each other or on leftover DB data.** Reset the test DB and make every test independent.
+- **Running tests against the development database** and wiping your own data.
+- **Testing only the happy path.** Also test invalid input, missing auth and other users' data.
+
+### Try it yourself
+1. Create a task titled `<b>bold</b>` and confirm it shows literally on the page.
+2. Temporarily render a title with plain string concatenation, observe the problem, then revert.
+3. Open DevTools and check the response headers. Remove an allowed CDN from the CSP and watch the console errors.
+4. Write unit tests for `parseCookies` (empty header, several cookies, `=` inside a value, malformed `%`).
+5. Write an integration test proving that the 11th login attempt within a minute gets `429`.
+6. Run `node --test --experimental-test-coverage` and find one uncovered branch to test.
+7. Run `npm audit` and explain one finding (or why there are none).
+
 ### Recap questions
 1. Why must validation happen on the server even with HTML `required`?
 2. Pick three OWASP risks and explain how the Task board mitigates them.
 3. What does CSP protect against? Why can it conflict with HTMX?
 4. Why start the test server on port `0`?
 5. What should be unit-tested and what integration-tested in a web app?
+6. How does escaping prevent XSS, and why is CSP still useful?
+7. Why should tests use a separate database, and how do you keep tests independent?

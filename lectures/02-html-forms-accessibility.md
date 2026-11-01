@@ -2,6 +2,9 @@
 
 **Goals:** write valid, semantic HTML; understand how forms become HTTP requests; build accessible pages.
 
+### In plain words
+HTML is the **skeleton and labels of a building**. Semantic tags like `<header>`, `<nav>`, `<main>` and `<footer>` are like the signs "Reception", "Elevators", "Exit" — they tell everyone (including blind visitors using a screen reader and search engines) what each part **is**, not how it looks. A **form** is like a paper form at the post office: each box has a printed label, some boxes are required, and when you hand it in at the counter (the `action` URL) the clerk checks it. **Accessibility** means the building has ramps and braille signs so *everyone* can use it. See the [glossary](../resources/glossary.md) for terms.
+
 ### 1. Document structure
 ```html
 <!doctype html>
@@ -104,6 +107,112 @@ Input types: `text, email, password, number, date, checkbox, radio, file, hidden
 
 ### 5. Validation
 Use https://validator.w3.org/ and the DevTools *Issues* tab.
+
+### Deeper dive: how the browser turns HTML into an accessible page
+The browser parses HTML into the **DOM tree**. From the DOM it builds the **accessibility tree** — a simplified version containing roles (button, link, heading), names (from labels or text) and states (checked, invalid). Screen readers read this second tree. That is why a `<div onclick>` "button" is invisible as a button: it has no role, is not focusable, and does not react to the keyboard.
+
+```mermaid
+graph LR
+  H["HTML source"] --> P["Parser"]
+  P --> DOM["DOM tree"]
+  DOM --> R["Render tree - what you see"]
+  DOM --> A["Accessibility tree - what screen readers hear"]
+  A --> SR["Screen reader / voice control"]
+```
+
+### Worked example: building an accessible "New task" form step by step
+Step 1 — the page skeleton with landmarks:
+```html
+<!doctype html>
+<html lang="en"> <!-- lang lets screen readers pick the right voice -->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1"> <!-- mobile friendly -->
+  <title>New task — Task Board</title> <!-- unique, descriptive title per page -->
+</head>
+<body>
+  <header><nav aria-label="Main"><a href="/">Home</a></nav></header>
+  <main>
+    <h1>New task</h1> <!-- exactly one h1 that describes the page -->
+    <!-- the form goes here (step 2) -->
+  </main>
+  <footer>© 2026 Task Board</footer>
+</body>
+</html>
+```
+Step 2 — the form with labels, hints and validation:
+```html
+<form method="post" action="/tasks"> <!-- POST because it creates data -->
+  <!-- "for" must match the input "id": clicking the label focuses the input -->
+  <label for="title">Title</label>
+  <input id="title" name="title" required maxlength="100"
+         aria-describedby="title-hint"> <!-- links the hint text to the field -->
+  <small id="title-hint">Up to 100 characters.</small>
+
+  <fieldset> <!-- groups related radio buttons -->
+    <legend>Priority</legend> <!-- the group's label, read before each option -->
+    <input type="radio" id="p-low" name="priority" value="low" checked>
+    <label for="p-low">Low</label>
+    <input type="radio" id="p-high" name="priority" value="high">
+    <label for="p-high">High</label>
+  </fieldset>
+
+  <label for="due">Due date</label>
+  <input id="due" name="due" type="date"> <!-- native date picker for free -->
+
+  <button type="submit">Create task</button> <!-- a real button: focusable, Enter works -->
+</form>
+```
+Step 3 — what is sent when the user submits:
+```http
+POST /tasks HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+title=Buy+milk&priority=high&due=2026-11-05
+```
+Only fields with a `name` are sent. Unchecked checkboxes are **not** sent at all.
+
+### The life of a form submission
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant S as Server
+  U->>B: Fills fields, presses Create task
+  B->>B: Built-in validation - required, maxlength, type
+  alt invalid
+    B-->>U: Shows message, focuses first invalid field
+  else valid
+    B->>S: POST /tasks with urlencoded body
+    S->>S: Validates again - never trust the client
+    S-->>B: 303 redirect or 422 with errors
+  end
+```
+
+### Choosing the right element
+```mermaid
+graph TD
+  Q["Does clicking it change the URL?"] -->|Yes| L["Use a link: a href"]
+  Q -->|No| Q2["Does it submit or change data?"]
+  Q2 -->|Yes| BTN["Use button type=submit inside a form"]
+  Q2 -->|No| BTN2["Use button type=button plus JS"]
+```
+
+### Common beginner mistakes
+- **Using `placeholder` instead of a `<label>`.** The placeholder disappears when typing and is not a reliable accessible name.
+- **Missing `name` on inputs** — the browser silently does not send that field.
+- **Clickable `<div>`s and `<span>`s** instead of `<button>`/`<a>`.
+- **Skipping heading levels** (`h1` → `h4`) because of font size. Use CSS for size, headings for structure.
+- **Images without `alt`** — or with `alt="image"`. Describe the content, or use `alt=""` for decoration.
+- **Relying only on client-side validation.** Anyone can bypass it with `curl`; the server must validate too.
+- **Indicating errors only with red colour** — colour-blind users miss it; add text.
+
+### Try it yourself
+1. Build the form above, submit it to `https://httpbin.org/post` and look at the `form` field in the response.
+2. Change `method` to `get` and observe where the data goes now (the URL!).
+3. Navigate the whole page with **Tab / Shift+Tab / Enter / Space** only. Can you do everything?
+4. Run Lighthouse → Accessibility in DevTools and fix every reported issue.
+5. Add a checkbox "Urgent" and verify what is sent when it is checked vs unchecked.
 
 ### Recap questions
 1. When should you use `<button>` and when `<a>`?

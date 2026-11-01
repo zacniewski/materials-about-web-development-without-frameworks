@@ -104,3 +104,8 @@ Step-by-step lab instructions that track the reference app.
 
 ### ✓ Step 6: Project materials
 `project/README.md` (brief, milestones, rubric) and `project/ideas.md` are written.
+
+### ✓ Step 7: Beginner-friendly extensions
+More theory, analogies, step-by-step examples and diagrams for students with little web experience.
+- Expand every lecture with "In plain words" explanations, worked examples, common mistakes, extra diagrams
+- Add `resources/glossary.md` and beginner primers (command line, JavaScript, how to debug)

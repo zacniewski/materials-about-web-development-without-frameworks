@@ -2,6 +2,9 @@
 
 **Goals:** understand the cascade, the box model and layout; build responsive UIs with Bootstrap 5 without writing a front-end build.
 
+### In plain words
+If HTML is the skeleton of a house, **CSS is the paint, furniture and layout**. A CSS rule is an instruction like "all doors (selector) should be red (property: value)". When two instructions conflict — "all doors red" vs "the front door blue" — the **cascade** decides who wins, usually the *more specific* one. **Bootstrap** is like buying a furniture set from IKEA: ready-made, matching pieces (buttons, cards, a grid) that you assemble with class names instead of building everything from scratch. See the [glossary](../resources/glossary.md).
+
 ### 1. CSS essentials
 ```css
 /* selector { property: value; } */
@@ -88,6 +91,100 @@ Form with server-side validation errors:
 
 ### 5. Customising
 Override CSS variables (`--bs-primary`, `data-bs-theme="dark"`) in your own stylesheet loaded **after** Bootstrap. Avoid editing `bootstrap.min.css`.
+
+### Deeper dive: how the browser decides the final style
+For each element and property the browser:
+1. Collects every matching declaration (browser defaults, your CSS, inline styles).
+2. Sorts by **origin and `!important`**.
+3. Then by **specificity** — inline > id > class/attribute/pseudo-class > element.
+4. Then by **order** — later wins.
+5. If nothing is set, **inherits** from the parent (for inheritable props like `color`, `font`) or uses the initial value.
+
+```mermaid
+graph TD
+  A["All matching declarations"] --> B["Origin and important"]
+  B --> C["Specificity - id, class, element"]
+  C --> D["Source order - last wins"]
+  D --> E["Winner = computed value"]
+  E -.no value.-> F["Inherited or initial value"]
+```
+
+Specificity is counted as three numbers `(ids, classes, elements)`: `#main .card p` = `(1,1,1)` beats `.card .title p` = `(0,2,1)`.
+
+### Worked example: a task card, plain CSS then Bootstrap
+Step 1 — plain CSS:
+```html
+<article class="task">
+  <h2 class="task__title">Buy milk</h2>
+  <p class="task__meta">Due tomorrow</p>
+  <button class="task__btn">Done</button>
+</article>
+```
+```css
+/* Make padding and border count inside width — easier maths */
+*, *::before, *::after { box-sizing: border-box; }
+
+.task {
+  border: 1px solid #ddd;   /* thin grey frame */
+  border-radius: 8px;       /* rounded corners */
+  padding: 1rem;            /* space INSIDE the border */
+  margin-bottom: 1rem;      /* space OUTSIDE, between cards */
+  display: flex;            /* lay children in a row */
+  align-items: center;      /* vertically centre them */
+  gap: 1rem;                /* space between children */
+}
+.task__title { margin: 0; flex: 1; } /* flex: 1 = take the remaining width */
+.task__meta  { margin: 0; color: #666; }
+.task__btn:hover { background: #e7f1ff; } /* pseudo-class: only while hovered */
+```
+Step 2 — the same with Bootstrap 5 utility and component classes, no custom CSS:
+```html
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<div class="container py-4">            <!-- centred, responsive width + vertical padding -->
+  <div class="row g-3">                 <!-- grid row with gutters -->
+    <div class="col-12 col-md-6 col-lg-4"> <!-- full width on phones, 1/2 on tablets, 1/3 on desktops -->
+      <article class="card shadow-sm">
+        <div class="card-body d-flex align-items-center gap-3"> <!-- flex utilities -->
+          <h2 class="h5 card-title mb-0 flex-grow-1">Buy milk</h2>
+          <span class="badge text-bg-warning">Due tomorrow</span>
+          <button class="btn btn-sm btn-success">Done</button>
+        </div>
+      </article>
+    </div>
+  </div>
+</div>
+```
+
+### The Bootstrap grid on different screens
+```mermaid
+graph LR
+  XS["Phone below 576px - col-12 - 1 per row"] --> MD["Tablet 768px and up - col-md-6 - 2 per row"]
+  MD --> LG["Desktop 992px and up - col-lg-4 - 3 per row"]
+```
+
+### Flexbox vs Grid — which one?
+```mermaid
+graph TD
+  Q["Layout in one direction - a row OR a column?"] -->|Yes| F["Flexbox: navbars, toolbars, card content"]
+  Q -->|No, rows AND columns| G["CSS Grid or Bootstrap row/col: page layout, galleries"]
+```
+
+### Common beginner mistakes
+- **Forgetting the viewport meta tag** — Bootstrap's responsive grid will not work on phones.
+- **Putting `.col` directly inside `.container` without a `.row`.** Gutters and alignment break.
+- **Fighting specificity with `!important`** everywhere. Use a more specific selector or fix the order instead.
+- **Mixing up padding and margin** — padding is inside the border, margin is outside.
+- **Using `id` selectors for styling** — they are hard to override; prefer classes.
+- **Loading Bootstrap JS without the bundle** — dropdowns/modals need Popper, included in `bootstrap.bundle.min.js`.
+- **Low contrast text** (light grey on white). Check contrast in DevTools.
+
+### Try it yourself
+1. Build the plain CSS card, then use DevTools → Computed to see which rule won for `margin`.
+2. Write two conflicting rules and predict the winner by specificity before checking.
+3. Rebuild the card with Bootstrap and resize the window to watch it go 1 → 2 → 3 per row.
+4. Add a Bootstrap navbar that collapses into a hamburger menu on small screens.
+5. Override Bootstrap's primary colour using a CSS variable `--bs-primary` in your own stylesheet.
 
 ### Recap questions
 1. Compute the specificity of `#main .card h3` vs `.board .card .title`.

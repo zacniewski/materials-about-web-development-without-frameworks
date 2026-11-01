@@ -23,6 +23,7 @@ graph LR
 |------|----------|
 | Syllabus (outcomes, schedule, grading) | [syllabus.md](syllabus.md) |
 | Environment setup | [resources/setup.md](resources/setup.md) |
+| **New to web dev? Start here** | [Glossary](resources/glossary.md), [Command line primer](resources/primer-command-line.md), [JavaScript primer](resources/primer-javascript.md), [Debugging primer](resources/primer-debugging.md) |
 | Lectures 1–15 | [lectures/](lectures/) |
 | Labs 1–15 | [labs/](labs/) |
 | Project brief & rubric | [project/README.md](project/README.md), [project/ideas.md](project/ideas.md) |

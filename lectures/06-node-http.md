@@ -2,6 +2,9 @@
 
 **Goals:** handle HTTP requests with nothing but Node core: routing by hand, query strings, request bodies, static files, correct status codes and headers.
 
+### In plain words
+`node:http` is the **bare reception desk** of your web application. Every visitor (request) walks up, and your single function decides what to do: look at *what* they ask for (`req.method`, `req.url`), maybe read the letter they brought (the **body**, which arrives in pieces like pages of a fax), and hand back an answer (`res`) with a status, some labels (headers) and content. There is no receptionist manual — no router, no body parser, no static file server — we build those ourselves, which is the best way to understand what frameworks do for you. See the [glossary](../resources/glossary.md).
+
 ### 1. Hello, HTTP
 ```js
 import http from 'node:http';
@@ -121,6 +124,105 @@ HTML forms only send GET/POST. Either use `POST /tasks/7/delete`, or add `<input
 - `server.on('clientError', ...)` handles malformed requests.
 - `server.headersTimeout`, `server.requestTimeout` protect against slow clients.
 - `process.on('SIGTERM', () => server.close())` gives a graceful shutdown.
+
+### Deeper dive: `req` and `res` are streams
+`req` is a **readable stream**: the body arrives in chunks (`Buffer`s), maybe slowly, maybe huge. `res` is a **writable stream**: you can `write()` many times and must call `end()` exactly once. Headers must be set **before** the first byte of the body is written.
+
+```mermaid
+graph LR
+  C["Client"] -->|chunks| REQ["req - readable stream"]
+  REQ --> H["Your handler"]
+  H --> RES["res - writable stream"]
+  RES -->|status, headers, body chunks| C
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> HeadersPending
+  HeadersPending --> HeadersSent: writeHead or first write
+  HeadersSent --> Streaming: write chunk
+  Streaming --> Streaming: write chunk
+  HeadersSent --> Ended: end
+  Streaming --> Ended: end
+  Ended --> [*]
+```
+
+### Worked example: a tiny JSON + HTML notes server
+```js
+// notes-server.js — Node >= 20, "type": "module"
+import { createServer } from 'node:http';
+
+const notes = [];                // in-memory "database" — lost on restart
+const LIMIT = 10_000;            // max body size in bytes
+
+// Read the whole body as text, rejecting bodies that are too big
+async function readText(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {           // req is async-iterable
+    size += chunk.length;
+    if (size > LIMIT) throw Object.assign(new Error('Payload Too Large'), { status: 413 });
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+const server = createServer(async (req, res) => {
+  try {
+    // Build a URL object so we get pathname and searchParams parsed for us
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    if (req.method === 'GET' && url.pathname === '/notes') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(notes));        // send the list as JSON
+    }
+
+    if (req.method === 'POST' && url.pathname === '/notes') {
+      const form = new URLSearchParams(await readText(req)); // parse title=...&...
+      const text = form.get('text')?.trim();
+      if (!text) {                                   // validation
+        res.writeHead(422, { 'Content-Type': 'text/plain' });
+        return res.end('text is required');
+      }
+      notes.push({ id: notes.length + 1, text });
+      res.writeHead(303, { Location: '/notes' });     // Post/Redirect/Get
+      return res.end();
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+  } catch (err) {
+    const status = err.status ?? 500;
+    if (status >= 500) console.error(err);           // log only real bugs
+    if (!res.headersSent) res.writeHead(status, { 'Content-Type': 'text/plain' });
+    res.end(status >= 500 ? 'Internal Server Error' : err.message);
+  }
+});
+
+server.listen(3000, () => console.log('Listening on http://localhost:3000'));
+```
+Try it:
+```bash
+curl -i -d "text=Hello" http://localhost:3000/notes   # 303 See Other
+curl -i http://localhost:3000/notes                   # 200 + [{"id":1,"text":"Hello"}]
+curl -i -d "text=" http://localhost:3000/notes        # 422
+```
+
+### Common beginner mistakes
+- **Forgetting `res.end()`** — the browser spins forever.
+- **Calling `writeHead` after writing the body** → `ERR_HTTP_HEADERS_SENT`.
+- **Comparing `req.url` with `'/tasks'`** while it actually is `'/tasks?page=2'`. Parse with `new URL()`.
+- **No body size limit** — one client can exhaust memory.
+- **Building file paths from the URL without checks** → path traversal (`/../../etc/passwd`).
+- **Returning 200 after a POST** and rendering the page; refreshing then re-submits. Use 303 redirect.
+- **Letting an exception crash the process** — wrap the handler in `try/catch`.
+
+### Try it yourself
+1. Run the notes server and add `DELETE /notes/:id` with manual parsing of the path.
+2. Add a `GET /` route that renders the notes as an HTML list with a form.
+3. Send a 20 KB body with `curl` and verify you get 413.
+4. Log every request as `METHOD path status durationMs`.
+5. Serve a `public/style.css` file with the correct `Content-Type`.
 
 ### Recap questions
 1. Why is `new URL(req.url, base)` needed instead of `req.url` directly?
