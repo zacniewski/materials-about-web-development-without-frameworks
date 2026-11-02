@@ -21,6 +21,15 @@
 8. **CSRF.** Implement the double-submit cookie from [`src/middleware/security.js`](../examples/task-board/src/middleware/security.js): a `csrf` cookie, a hidden `_csrf` field in every form, `hx-headers='{"X-CSRF-Token": …}'` on `<body>`, and a 403 on mismatch. Test it with an `evil.html` page on another port that auto-submits a form to your app.
 9. Update the seed to use `hashPassword('password123')`.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Hash a password with `crypto.scrypt` and print the result in hex.
+2. Verify a password against the hash with `timingSafeEqual`.
+3. Set a cookie `hello=world; HttpOnly` from a route and read it back on the next request.
+4. Generate a random session id with `crypto.randomBytes(32).toString('hex')`.
+5. Write a middleware that returns `401` if no user is logged in.
+6. Show the logged-in user’s name in the navbar, or a “Log in” link otherwise.
+
 ### Checkpoints (graded)
 - [ ] Register/login/logout with hashed passwords and DB sessions (1 pt)
 - [ ] Other users' boards and tasks return 404 (0.5 pt)

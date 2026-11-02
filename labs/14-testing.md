@@ -23,6 +23,15 @@
 7. Coverage: `node --test --experimental-test-coverage`.
 8. **Self-review.** Fill in the OWASP table from lecture 14 §2 for *your* app in `lab14.md`.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Write a function `isNonEmptyString(v)` and three `node:test` cases for it.
+2. Validate that a task title is 1–100 characters and show an error message in the form.
+3. Run `node --test` and make one test fail on purpose; read the output.
+4. Add the `X-Content-Type-Options: nosniff` header and check it with `curl -I`.
+5. Write an integration test that starts the server and checks `GET /` returns `200`.
+6. Test that `GET /does-not-exist` returns `404`.
+
 ### Checkpoints (graded)
 - [ ] All handlers use the validation module; invalid input never reaches Prisma (0.5 pt)
 - [ ] At least 15 passing tests including ≥ 5 HTTP integration tests (1 pt)

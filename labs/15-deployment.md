@@ -22,6 +22,15 @@
    Write a `systemd` unit (lecture 15 §3) or a `start.sh` script, and document the steps in `DEPLOY.md`.
 8. Behind a proxy (optional): run Caddy `caddy reverse-proxy --from :8080 --to :3000` and check that `Secure` cookies require HTTPS.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Read `PORT` from `process.env` with a default of `3000`; start the app on another port.
+2. Create a `.env.example` listing every variable your app needs.
+3. Add a `GET /health` route that returns `{ "status": "ok" }`.
+4. Log one line per request with method, path, status and duration in ms.
+5. Handle `SIGTERM` by closing the server and printing a message.
+6. Run the app with `NODE_ENV=production` and check that stack traces are not shown to users.
+
 ### Checkpoints (graded)
 - [ ] Config validation, JSON logs and graceful shutdown work (1 pt)
 - [ ] `DEPLOY.md` lets a colleague start your app from scratch (0.5 pt)

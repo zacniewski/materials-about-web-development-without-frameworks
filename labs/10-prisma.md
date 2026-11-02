@@ -21,6 +21,15 @@
 7. Add a field: `priority Priority @default(MEDIUM)` → `npx prisma migrate dev --name add_priority`. Show priority badges in `taskCard`.
 8. `npx prisma studio`: edit a task and refresh your app.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Add a simple model `Note { id Int @id @default(autoincrement()) text String }` and run a migration.
+2. Open Prisma Studio and add two records by hand.
+3. Use `prisma.note.create` to insert a note from a script.
+4. List all notes with `findMany`, ordered by `id` descending.
+5. Find one note by id with `findUnique`, then update its text with `update`.
+6. Delete a note with `delete` and count the remaining ones with `count`.
+
 ### Checkpoints (graded)
 - [ ] Two migrations committed; the app runs on Prisma only (1 pt)
 - [ ] Missing task → 404 via `P2025` / `findUnique` returning `null` (0.5 pt)

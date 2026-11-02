@@ -28,6 +28,15 @@
 7. Keyboard test: reach every control with Tab; the focus must be visible.
 8. Run Lighthouse → Accessibility in DevTools.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Create `hello.html` with a valid HTML5 skeleton (`<!doctype html>`, `lang`, `<meta charset>`, `<title>`) and a single `<h1>`.
+2. Write a short page that uses `<header>`, `<nav>`, `<main>`, `<footer>` — each with one line of text.
+3. Make an ordered list of three tasks and an unordered list of three tags.
+4. Add a link to another page of your prototype and an image with a meaningful `alt` text.
+5. Build a tiny form with one text input and a submit button; connect a `<label>` to the input with `for`/`id`.
+6. Add `required` and `maxlength="50"` to the input and try to submit an empty / too long value.
+
 ### Checkpoints (graded)
 - [ ] Three valid HTML pages using semantic elements, with every input labelled (1 pt)
 - [ ] httpbin output of the task form pasted into `lab02.md`, showing repeated `tags` (0.5 pt)

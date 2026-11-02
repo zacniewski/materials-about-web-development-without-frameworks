@@ -30,6 +30,15 @@
    ```
    Run `npm test`.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Write `hello.js` that prints `Hello, Node!` and run it with `node hello.js`.
+2. Print `process.argv` and `process.version`; run the script with two extra arguments.
+3. Create `math.js` that exports `add(a, b)` and import it from another ESM file.
+4. Read a small text file with `fs/promises` `readFile` and print its line count.
+5. Write a JSON object to `data.json` with `writeFile` and read it back with `JSON.parse`.
+6. Predict, then check, the output order of `console.log`, `setTimeout(..., 0)` and `Promise.resolve().then(...)`.
+
 ### Checkpoints (graded)
 - [ ] Project skeleton with `package.json` (`type: module`, scripts) and `.gitignore` committed (0.5 pt)
 - [ ] Working `tasks-cli.js` using async file I/O (1 pt)

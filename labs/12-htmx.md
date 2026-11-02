@@ -19,6 +19,15 @@
 
 The reference implementation is in [`examples/task-board/src/routes/`](../examples/task-board/src/routes/) and [`src/views/board.js`](../examples/task-board/src/views/board.js).
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Include HTMX on a page and add a button with `hx-get="/time"` that replaces its own content.
+2. Use `hx-target` to put the response into a different `<div>`.
+3. Try `hx-swap` values `innerHTML`, `outerHTML` and `beforeend` and describe the difference.
+4. Make a form submit with `hx-post` and append the returned `<li>` to a list.
+5. Add `hx-confirm` to a delete button.
+6. On the server, detect the `HX-Request` header and return only a fragment when it is present.
+
 ### Checkpoints (graded)
 - [ ] Add, move, delete and inline edit work without reloads (1 pt)
 - [ ] Active search with debouncing and an indicator (0.5 pt)

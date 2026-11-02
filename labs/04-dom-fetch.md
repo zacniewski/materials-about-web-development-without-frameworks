@@ -15,6 +15,15 @@
 6. **fetch.** Serve the folder (`npx http-server lab04` or `python3 -m http.server`) and load initial tasks from `tasks.json` with `fetch`. Handle `!res.ok`.
 7. **POST.** Send the new task to `https://httpbin.org/post` as JSON with `fetch` and log the echoed body.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. In the browser console, select the first `<h1>` with `document.querySelector` and change its text.
+2. Add a button that increments a counter shown on the page every time it is clicked.
+3. Toggle a CSS class (e.g. `text-decoration-line-through`) on a task when it is clicked.
+4. Create a new `<li>` with `document.createElement` and append it to a list.
+5. Listen to `input` events on a text field and show the current number of characters below it.
+6. Use `fetch('https://httpbin.org/get')`, `await` the JSON and `console.log` the `url` field.
+
 ### Checkpoints (graded)
 - [ ] Add/move/delete work with a single delegated listener (1 pt)
 - [ ] You demonstrate the XSS with `innerHTML` and the fix (0.5 pt)

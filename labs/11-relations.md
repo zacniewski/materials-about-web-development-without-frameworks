@@ -21,6 +21,15 @@
 6. **Seed.** `prisma/seed.js` creates a demo user, a board, tasks and tags with `upsert`/`connectOrCreate`. Register it in `package.json` (`"prisma": { "seed": "node --env-file=.env prisma/seed.js" }`) and run `npx prisma db seed` twice. The second run must not fail.
 7. **Transaction.** "Archive board": move all DONE tasks to an "Archive" board and delete them from the source in one `prisma.$transaction`.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Draw (on paper or in Mermaid) the relations between `User`, `Board` and `Task`.
+2. Create one user with one board using a nested `create`.
+3. Load a board together with its tasks using `include`.
+4. Select only the `title` of tasks with `select`.
+5. Add a tag to a task and list all tasks with a given tag.
+6. Turn on query logging and count how many queries a page makes.
+
 ### Checkpoints (graded)
 - [ ] Migration with all relations; ER diagram in `lab11.md` (0.5 pt)
 - [ ] Boards → tasks → tags displayed with a constant number of queries (1 pt)

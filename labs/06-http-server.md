@@ -25,6 +25,15 @@
 7. Use your Bootstrap HTML from lab 3 as template strings (escaping comes in lab 8, so for now use only your own input).
 8. Test everything with `curl -i` and the browser. Press F5 after adding a task and notice that nothing is posted twice.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Create a server that answers every request with `Hello` as `text/plain` on port 3000.
+2. Log the `method` and `url` of each request to the console.
+3. Return `404 Not Found` for any path other than `/`.
+4. Add a route `/time` that returns the current time as JSON with the correct `Content-Type`.
+5. Read a query parameter: `/greet?name=Ann` should answer `Hello, Ann`.
+6. Respond to `/old` with a `302` redirect to `/` and verify it with `curl -i`.
+
 ### Checkpoints (graded)
 - [ ] List, filter, add and delete tasks work with PRG (1 pt)
 - [ ] Unknown routes give 404, too-large bodies give 413 (0.5 pt)

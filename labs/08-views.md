@@ -16,6 +16,15 @@
 7. **XSS test.** Create a task titled `<script>alert(1)</script>` and another with `" onmouseover="alert(1)` in a field rendered inside an attribute. Nothing may execute. View the page source and find the escaped entities.
 8. Forms with errors: `is-invalid`, message, and the user's value kept (status 422).
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Write a view function `hello(name)` that returns an `<h1>` with the name.
+2. Call your `html` tag with `<b>hi</b>` as a value and check that it is escaped.
+3. Render an array of three task titles as a `<ul>` using `map`.
+4. Create a `layout(title, body)` function and use it for two different pages.
+5. Make a partial `taskItem(task)` and reuse it on two pages.
+6. Show a message “No tasks yet” when the task list is empty.
+
 ### Checkpoints (graded)
 - [ ] All HTML produced through `html`; no string concatenation with user data (1 pt)
 - [ ] XSS attempts from step 7 are rendered harmlessly (0.5 pt)

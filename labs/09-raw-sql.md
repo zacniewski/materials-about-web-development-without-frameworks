@@ -19,6 +19,15 @@
 7. **SQL injection demo.** Write (in a scratch file, never in the app) a string-concatenated query `WHERE title LIKE '%${q}%'` and break it with `q = %' OR '1'='1`. Explain why the parameterised version is safe.
 8. Transaction: `moveAllTasks(fromBoard, toBoard)` + delete the old board inside `BEGIN … COMMIT` with `ROLLBACK` on error.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Connect with `psql` and run `SELECT version();` and `SELECT now();`.
+2. Create a table `notes(id serial primary key, text text not null)` and insert three rows.
+3. Write `SELECT` queries that use `WHERE`, `ORDER BY` and `LIMIT`.
+4. Update one row and delete another; check the result with `SELECT *`.
+5. Count rows with `COUNT(*)` and group tasks by `done` with `GROUP BY`.
+6. From Node, run one parameterised query (`$1`) with `pg` and print the rows.
+
 ### Checkpoints (graded)
 - [ ] Schema with PK/FK/CHECK constraints and the index committed in `sql/schema.sql` (0.5 pt)
 - [ ] The app works against PostgreSQL with parameterised queries only (1 pt)

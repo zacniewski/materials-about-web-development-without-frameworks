@@ -20,6 +20,15 @@
 7. Port all lab 6 routes to the router. Use per-route middleware `loadTask` which sets `ctx.state.task` or throws 404.
 8. Tests in `test/router.test.js`: params extraction, 404 fall-through, 405, onion order of `compose`. Use [`examples/task-board/test/unit.test.js`](../examples/task-board/test/unit.test.js) as inspiration.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Write a function `logger(ctx, next)` that prints the request time and calls `next()`.
+2. Register two routes `GET /` and `GET /about` in your router and test both.
+3. Add a route with a parameter, e.g. `GET /hello/:name`, and print `ctx.params.name`.
+4. Make the router answer `405 Method Not Allowed` for `POST /about`.
+5. Write a middleware that adds an `X-Lab: 7` header to every response.
+6. Compose three middlewares that each print a number before and after `next()`; explain the output order.
+
 ### Checkpoints (graded)
 - [ ] All routes go through your router; no `if (req.url === …)` left (1 pt)
 - [ ] Throwing `HttpError(404)` in a handler renders your error page; a `TypeError` gives a generic 500 (0.5 pt)

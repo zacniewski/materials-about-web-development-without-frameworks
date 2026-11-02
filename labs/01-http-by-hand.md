@@ -27,6 +27,15 @@
 5. **DevTools.** Open a news site, Network tab, *Disable cache*, then reload. Sort by size and find the HTML document, the largest asset and a request answered with `304` (reload again without disabling the cache).
 6. **Cookies.** `curl -i -c jar.txt https://httpbin.org/cookies/set?lab=1` then `curl -b jar.txt https://httpbin.org/cookies`.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Run `curl -i https://httpbin.org/status/200`, `/status/201` and `/status/500`. Write down the reason phrase of each status code.
+2. Run `curl -i https://httpbin.org/user-agent`, then repeat with `-A 'MyBrowser/1.0'`. What changed in the response?
+3. Find the `Content-Type` and `Content-Length` of `http://example.com/` using `curl -I`.
+4. Send a `DELETE` request with `curl -i -X DELETE https://httpbin.org/delete` and note the status code.
+5. Split the URL `https://shop.example.com:8443/cart/items?id=7&qty=2#summary` into scheme, host, port, path, query and fragment.
+6. In DevTools, open any page and find one request with a `200`, one with a redirect (3xx) and one image. Note their sizes.
+
 ### Checkpoints (graded)
 - [ ] `lab01.md` in your repo with the answers below (1 pt)
   1. The full request line and headers sent by step 3.

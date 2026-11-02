@@ -20,6 +20,15 @@
 7. `app.css`: give columns a background (`var(--bs-tertiary-bg)`), rounded corners and `min-height`. Strike through done tasks.
 8. Test with DevTools device toolbar: 375 px, 768 px and 1280 px.
 
+### Simple exercises (warm-up)
+Short, ungraded tasks to practise the basics before the main steps or if you finish early.
+1. Include Bootstrap from a CDN in a blank page and add one `btn btn-primary` and one `btn btn-outline-danger` button.
+2. Wrap the page content in a `.container` and compare it with `.container-fluid` by resizing the window.
+3. Create a row with three columns (`col-md-4`) and check how they stack on a narrow screen.
+4. Show a success message using an `alert alert-success` component.
+5. Style a single task as a `card` with a title, a text and a badge.
+6. Write one custom CSS rule in `app.css` that changes the colour of `h1`; verify in DevTools which rule wins.
+
 ### Checkpoints (graded)
 - [ ] The board shows 1 column on a phone and 3 on a laptop (1 pt)
 - [ ] Forms use Bootstrap form classes and an error state is shown accessibly (0.5 pt)
