@@ -194,6 +194,73 @@ router.patch('/tasks/:id/toggle', requireAuth, loadTask, async (ctx) => {
 });
 ```
 
+### 11. More theory: hypermedia as the engine of application state
+In a classic web app the server sends **HTML with links and forms**, and those links and forms tell the browser what it can do next. This is the REST idea called HATEOAS. A JSON API plus a SPA moves that knowledge into client JavaScript. HTMX keeps it in the HTML and only widens what HTML can do: any element can send a request, any event can trigger it, any HTTP verb can be used, and the response can replace any part of the page (see [htmx.org/docs](https://htmx.org/docs/) and the essay [Hypermedia-Driven Applications](https://htmx.org/essays/hypermedia-driven-applications/)).
+
+| Aspect | Classic multi-page app | HTMX app | SPA + JSON API |
+|--------|------------------------|----------|----------------|
+| What the server returns | full HTML pages | full pages **or** HTML fragments | JSON |
+| Where the UI state lives | server | server (+ small bits in the DOM) | client JS store |
+| JavaScript you write | almost none | very little | a lot |
+| Works without JS | yes | yes, if you use progressive enhancement | usually no |
+| Back button / URLs | natural | needs `hx-push-url` | needs a router |
+| Best fit | documents, forms | CRUD apps, dashboards | offline apps, editors, games |
+
+```mermaid
+flowchart LR
+  subgraph HTMX
+    B1[Browser] -- "POST /tasks (form data)" --> S1[Server]
+    S1 -- "HTML fragment: li with new task" --> B1
+  end
+  subgraph SPA
+    B2[Browser JS] -- "POST /api/tasks (JSON)" --> S2[Server]
+    S2 -- "{id: 5, title: ...}" --> B2
+    B2 -- "render template in JS" --> B2
+  end
+```
+
+### 12. Reference: swap strategies and request headers
+[`hx-swap`](https://htmx.org/attributes/hx-swap/) values:
+
+| Value | Effect on the target |
+|-------|----------------------|
+| `innerHTML` (default) | replace the children of the target |
+| `outerHTML` | replace the target element itself |
+| `beforebegin` / `afterend` | insert before / after the target (as a sibling) |
+| `afterbegin` / `beforeend` | insert as first / last child |
+| `delete` | remove the target, ignore the response |
+| `none` | do not swap (OOB swaps still happen) |
+
+Modifiers can be added: `hx-swap="outerHTML swap:200ms settle:100ms"`, `scroll:top`, `show:window:top`.
+
+Headers HTMX sends and understands ([reference](https://htmx.org/reference/)):
+
+| Request header | Meaning | Response header | Effect |
+|----------------|---------|-----------------|--------|
+| `HX-Request: true` | the request came from HTMX | `HX-Redirect` | full-page redirect in the browser |
+| `HX-Target` | id of the target element | `HX-Refresh: true` | reload the whole page |
+| `HX-Trigger` | id of the element that fired | `HX-Trigger` | fire a client event (e.g. `taskAdded`) |
+| `HX-Current-URL` | URL of the page | `HX-Retarget` / `HX-Reswap` | change target / swap from the server |
+| `HX-Boosted` | request came from `hx-boost` | `HX-Push-Url` | push a new URL into history |
+
+Because one URL can return two different bodies, the server must add `Vary: HX-Request` so caches keep them apart ([MDN: Vary](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Vary)).
+
+### 13. More theory: errors, status codes and security
+By default HTMX **does not swap** responses with 4xx/5xx status. For validation errors you can either return `200` with the form re-rendered, or return `422` and configure swapping via the `htmx:beforeSwap` event ([events reference](https://htmx.org/events/)). Security notes ([htmx security docs](https://htmx.org/docs/#security)):
+- HTMX inserts server HTML into the page, so **every** fragment must be escaped exactly like a full page, otherwise you get XSS ([OWASP XSS Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)).
+- `hx-post`, `hx-put`, `hx-delete` are state-changing requests, so they need a CSRF token, e.g. `hx-headers='{"X-CSRF-Token": "..."}'` on `<body>`.
+- Never `hx-get` a URL built from user input to a foreign origin; keep `htmx.config.selfRequestsOnly` on.
+
+```mermaid
+flowchart TD
+  R[Response arrives] --> S{Status code}
+  S -- 2xx --> SW[swap into target]
+  S -- 204 --> NO[no swap]
+  S -- 3xx --> FX[followed by fetch, final page swapped]
+  S -- 4xx/5xx --> E[htmx:responseError, no swap by default]
+  E --> BS[htmx:beforeSwap handler may set shouldSwap = true]
+```
+
 ### Common beginner mistakes
 - **Returning a full page (with `<html>`, navbar...) to an HTMX request**, which nests a page inside the page. Check `ctx.isHtmx`.
 - **Mixing up `innerHTML` and `outerHTML`.** Replacing the inside of an `<li>` with another `<li>` produces `<li><li>`.
@@ -221,3 +288,15 @@ router.patch('/tasks/:id/toggle', requireAuth, loadTask, async (ctx) => {
 6. Why does the server need `Vary: HX-Request`?
 7. What are the default triggers for a button, a form and an input?
 8. What is progressive enhancement and how does HTMX support it?
+
+### Further reading / documentation
+- [htmx documentation](https://htmx.org/docs/)
+- [htmx reference: attributes, headers, events](https://htmx.org/reference/)
+- [hx-swap](https://htmx.org/attributes/hx-swap/), [hx-trigger](https://htmx.org/attributes/hx-trigger/), [hx-swap-oob](https://htmx.org/attributes/hx-swap-oob/)
+- [htmx events](https://htmx.org/events/)
+- [htmx examples](https://htmx.org/examples/)
+- [Essay: Hypermedia-Driven Applications](https://htmx.org/essays/hypermedia-driven-applications/)
+- [Book: Hypermedia Systems](https://hypermedia.systems/)
+- [MDN: HTTP headers — Vary](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Vary)
+- [MDN: Progressive enhancement](https://developer.mozilla.org/en-US/docs/Glossary/Progressive_Enhancement)
+- [OWASP: XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)

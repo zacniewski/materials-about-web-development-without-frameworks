@@ -238,6 +238,89 @@ sequenceDiagram
   L->>L: log GET /tasks/99 404
 ```
 
+### More theory: patterns behind a mini-framework
+
+The pieces you built are classic design patterns:
+
+| Piece | Pattern | Idea |
+|-------|---------|------|
+| Middleware chain | Chain of Responsibility | Each link may handle or pass on |
+| `compose` | Function composition / decorator | Wrap a function with extra behaviour |
+| Router | Dispatch table | Map (method, path) to a handler |
+| Context `ctx` | Parameter object | One object instead of many arguments |
+| Error middleware | Centralised exception handling | One place turns errors into responses |
+
+[Express](https://expressjs.com/en/guide/using-middleware.html) uses `(req, res, next)` callbacks, while [Koa](https://koajs.com/) uses `async (ctx, next)` with an "onion" — our design is closest to Koa.
+
+### More theory: async errors and `await next()`
+
+If a middleware calls `next()` without `await` (or `return`), errors thrown downstream become *unhandled promise rejections* and skip your error handler. Read [MDN: Using promises — error handling](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises#error_handling) and [MDN: async function](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function). As a safety net, log [`process.on('unhandledRejection')`](https://nodejs.org/api/process.html#event-unhandledrejection).
+
+```mermaid
+sequenceDiagram
+    participant E as errorHandler
+    participant L as logger
+    participant H as handler
+    E->>L: await next()
+    L->>H: await next()
+    H--xL: throw HttpError(404)
+    L--xE: rejection propagates
+    E-->>E: catch → res 404 page
+```
+
+### More theory: route matching strategies
+
+| Strategy | Example | Pros | Cons |
+|----------|---------|------|------|
+| Exact string | `/about` | Fast, simple | No parameters |
+| Regex per route | `^/tasks/(\d+)$` | Flexible | Hard to read |
+| Pattern → regex (ours) | `/tasks/:id` | Readable, params | Linear scan |
+| Radix tree | (find-my-way, used by Fastify) | Very fast | Complex to build |
+| `URLPattern` | `new URLPattern({ pathname: '/tasks/:id' })` | Standard API | Newer runtime support |
+
+See [MDN: URLPattern](https://developer.mozilla.org/en-US/docs/Web/API/URLPattern) and [MDN: Regular expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions). Always decode params with [`decodeURIComponent`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/decodeURIComponent) inside a `try` — malformed `%` sequences throw.
+
+```mermaid
+flowchart LR
+    R[req method + path] --> M{for each route}
+    M -->|method differs| M
+    M -->|regex fails| M
+    M -->|match| P[extract params → ctx.params]
+    P --> H[run route handler]
+    M -->|none left| N{path matched any method?}
+    N -- yes --> A[405 + Allow header]
+    N -- no --> F[404]
+```
+
+### More theory: order of middleware matters
+
+| Position | Middleware | Why there |
+|----------|------------|-----------|
+| 1 | Error handler | Must wrap everything to catch all errors |
+| 2 | Logger / timing | Measures the full request |
+| 3 | Security headers | Applies even to error pages |
+| 4 | Static files | Short-circuit before parsing bodies |
+| 5 | Body parser | Only needed for dynamic routes |
+| 6 | Session / auth | Needs cookies, before protected routes |
+| 7 | Router | The actual work |
+
+Security headers worth setting are listed in the [OWASP HTTP Headers Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html). For error handling guidance see the [OWASP Error Handling Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html) — never leak stack traces to users.
+
+### More theory: custom error classes
+
+Extend the built-in [`Error`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error) so the error handler can read a `status`:
+
+```js
+class HttpError extends Error {
+  constructor(status, message, { expose = status < 500 } = {}) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+    this.expose = expose; // safe to show message to the user?
+  }
+}
+```
+
 ### Common beginner mistakes
 - **Forgetting `await` before `next()`** — "after" code runs too early and errors escape the error handler.
 - **Calling `next()` twice** — the handler runs twice; `compose` guards against it.
@@ -259,3 +342,18 @@ sequenceDiagram
 3. How does the router turn `/tasks/:id` into a regular expression?
 4. When should the server reply 405 and when 404?
 5. Why must error messages of 5xx errors not be shown to users?
+
+### Further reading / documentation
+
+- [Node.js `http` module](https://nodejs.org/api/http.html)
+- [Node.js `process` events](https://nodejs.org/api/process.html#process-events)
+- [Express: Using middleware](https://expressjs.com/en/guide/using-middleware.html)
+- [Express: Error handling](https://expressjs.com/en/guide/error-handling.html)
+- [Koa documentation](https://koajs.com/)
+- [MDN: Using promises](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises)
+- [MDN: async function](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function)
+- [MDN: Regular expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions)
+- [MDN: URLPattern](https://developer.mozilla.org/en-US/docs/Web/API/URLPattern)
+- [MDN: Error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error)
+- [OWASP HTTP Headers Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html)
+- [OWASP Error Handling Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html)

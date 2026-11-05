@@ -226,6 +226,117 @@ export async function setStatus(ctx, id, status) {
 }
 ```
 
+### More theory: ORM patterns and trade-offs
+
+| Pattern | Idea | Example tools |
+|---------|------|---------------|
+| Active Record | Objects save themselves (`task.save()`) | Rails AR, Sequelize |
+| Data Mapper | Separate mapper/repository persists plain objects | TypeORM (data mapper mode), Doctrine |
+| Query builder | Fluent SQL in code, no models | Knex |
+| Schema-first client | Schema file generates a typed client | Prisma |
+| Raw SQL | You write SQL | `pg` |
+
+| | Raw SQL (`pg`) | Prisma |
+|---|----------------|--------|
+| Control over SQL | Full | Partial (`$queryRaw` escape hatch) |
+| Type safety | Manual | Generated from schema |
+| Migrations | Hand-written | `prisma migrate` |
+| Relations | Manual JOINs | `include` / `select` |
+| Learning curve | SQL | Prisma API + SQL basics |
+
+See [Prisma: What is Prisma ORM?](https://www.prisma.io/docs/orm/overview/introduction/what-is-prisma) and [Prisma: Why Prisma ORM?](https://www.prisma.io/docs/orm/overview/introduction/why-prisma).
+
+### More theory: relations in the Prisma schema
+
+Relations are declared on both sides with [`@relation`](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations). The side holding the foreign key has the `fields`/`references` arguments. Full syntax: [Prisma schema reference](https://www.prisma.io/docs/orm/reference/prisma-schema-reference).
+
+```prisma
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  tasks Task[]
+}
+
+model Task {
+  id     Int  @id @default(autoincrement())
+  title  String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  @@index([userId])
+}
+```
+
+```mermaid
+erDiagram
+    User ||--o{ Task : "tasks / user"
+    User {
+        Int id PK
+        String email UK
+    }
+    Task {
+        Int id PK
+        String title
+        Int userId FK
+    }
+```
+
+### More theory: the migration workflow
+
+```mermaid
+flowchart LR
+    A[Edit schema.prisma] --> B[prisma migrate dev]
+    B --> C[SQL file in prisma/migrations]
+    B --> D[Applied to dev DB]
+    B --> E[prisma generate → typed client]
+    C --> F[git commit]
+    F --> G[prisma migrate deploy in production]
+```
+
+| Command | Where | What it does |
+|---------|-------|--------------|
+| `prisma migrate dev` | Development | Create + apply migration, regenerate client |
+| `prisma migrate deploy` | CI / production | Apply pending migrations only |
+| `prisma migrate reset` | Development | Drop DB, re-apply all, run seed |
+| `prisma db push` | Prototyping | Sync schema without migration files |
+| `prisma generate` | Anywhere | Regenerate the client |
+| `prisma studio` | Development | GUI to browse data |
+
+Docs: [Prisma Migrate](https://www.prisma.io/docs/orm/prisma-migrate), [Prisma CLI reference](https://www.prisma.io/docs/orm/reference/prisma-cli-reference).
+
+### More theory: querying relations and the N+1 problem
+
+Loading a list and then one query per item is the "N+1" problem. Prisma solves it with [`include`/`select`](https://www.prisma.io/docs/orm/prisma-client/queries/select-fields) and [relation queries](https://www.prisma.io/docs/orm/prisma-client/queries/relation-queries).
+
+```js
+// N+1: 1 query for users + N for tasks
+for (const u of await prisma.user.findMany()) {
+  u.tasks = await prisma.task.findMany({ where: { userId: u.id } });
+}
+// Better: one call
+const users = await prisma.user.findMany({ include: { tasks: true } });
+```
+
+Filtering, sorting and pagination: [Filtering and sorting](https://www.prisma.io/docs/orm/prisma-client/queries/filtering-and-sorting), [Pagination](https://www.prisma.io/docs/orm/prisma-client/queries/pagination).
+
+### More theory: transactions and error codes
+
+Use [`prisma.$transaction`](https://www.prisma.io/docs/orm/prisma-client/queries/transactions) for atomic work — either an array of queries or an interactive callback:
+
+```js
+await prisma.$transaction(async (tx) => {
+  await tx.account.update({ where: { id: 1 }, data: { balance: { decrement: 100 } } });
+  await tx.account.update({ where: { id: 2 }, data: { balance: { increment: 100 } } });
+});
+```
+
+| Prisma code | Meaning | Typical HTTP |
+|-------------|---------|--------------|
+| `P2002` | Unique constraint failed | 409 / form error |
+| `P2003` | Foreign key constraint failed | 400 |
+| `P2025` | Record to update/delete not found | 404 |
+
+Full list: [Prisma error reference](https://www.prisma.io/docs/orm/reference/error-reference). Raw SQL with tagged templates (`$queryRaw`) is parameterized; `$queryRawUnsafe` is not — see [Raw queries](https://www.prisma.io/docs/orm/prisma-client/using-raw-sql/raw-queries).
+
 ### Common beginner mistakes
 - **Calling `new PrismaClient()` in every file or request**, which opens too many connections. Export one instance from `src/db.js`.
 - **Editing the database by hand** (in psql or Studio) instead of through migrations. The schema and the DB then drift apart.
@@ -252,3 +363,19 @@ export async function setStatus(ctx, id, status) {
 5. How do you turn Prisma error `P2025` into an HTTP 404?
 6. Why should a new non-null column usually get a `@default`?
 7. When would you choose `select` over returning the full model?
+
+### Further reading / documentation
+
+- [Prisma ORM documentation](https://www.prisma.io/docs/orm)
+- [Prisma: What is Prisma ORM?](https://www.prisma.io/docs/orm/overview/introduction/what-is-prisma)
+- [Prisma schema reference](https://www.prisma.io/docs/orm/reference/prisma-schema-reference)
+- [Prisma: Relations](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations)
+- [Prisma Migrate](https://www.prisma.io/docs/orm/prisma-migrate)
+- [Prisma CLI reference](https://www.prisma.io/docs/orm/reference/prisma-cli-reference)
+- [Prisma Client: CRUD](https://www.prisma.io/docs/orm/prisma-client/queries/crud)
+- [Prisma Client: Relation queries](https://www.prisma.io/docs/orm/prisma-client/queries/relation-queries)
+- [Prisma Client: Transactions](https://www.prisma.io/docs/orm/prisma-client/queries/transactions)
+- [Prisma Client: Raw queries](https://www.prisma.io/docs/orm/prisma-client/using-raw-sql/raw-queries)
+- [Prisma error reference](https://www.prisma.io/docs/orm/reference/error-reference)
+- [PostgreSQL documentation](https://www.postgresql.org/docs/current/)
+- [OWASP SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)

@@ -226,6 +226,68 @@ export const csrf = async (ctx, next) => {
 ```
 The exact field names may differ slightly from the reference app. The principle is what matters.
 
+### 11. More theory: cookie attributes in detail
+A cookie is set with the [`Set-Cookie`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie) header. Every attribute closes a different hole ([MDN: Using HTTP cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies)):
+
+| Attribute | What it does | Attack it limits |
+|-----------|--------------|------------------|
+| `HttpOnly` | JS cannot read it (`document.cookie`) | session theft through XSS |
+| `Secure` | sent only over HTTPS | sniffing on public Wi-Fi |
+| `SameSite=Lax` | not sent on cross-site POST / subrequests | most CSRF |
+| `SameSite=Strict` | never sent from other sites, even on links | CSRF (but breaks "open from email" login) |
+| `Path=/` | which paths receive it | accidental leaks to other apps on the host |
+| `Max-Age` / `Expires` | lifetime; absent = session cookie | long-lived stolen cookies |
+| `__Host-` prefix | forces `Secure`, `Path=/`, no `Domain` | subdomain overriding the cookie |
+
+Example: `Set-Cookie: __Host-sid=7f3c...; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`.
+
+### 12. More theory: sessions vs tokens (JWT)
+| | Server-side session (this course) | Stateless token (JWT) |
+|---|---|---|
+| What the client holds | random id | signed data (user id, expiry) |
+| Where the truth lives | `sessions` table | inside the token |
+| Logout / revoke | delete the row, done | hard: token valid until expiry (needs a denylist) |
+| DB lookup per request | yes (cheap with an index) | no |
+| Size | ~40 bytes | hundreds of bytes |
+| Good for | server-rendered apps, HTMX | APIs across services, mobile clients |
+
+For a server-rendered app, sessions are simpler and safer. See the [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) and the [OWASP JWT Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html).
+
+```mermaid
+stateDiagram-v2
+  [*] --> Anonymous
+  Anonymous --> Authenticated: login OK (new session id, rotate!)
+  Authenticated --> Authenticated: request (sliding expiry)
+  Authenticated --> Anonymous: logout (delete row + cookie)
+  Authenticated --> Anonymous: idle / absolute timeout
+  Authenticated --> Anonymous: password change (delete all sessions)
+```
+
+### 13. More theory: password storage and login hardening
+Node.js has [`crypto.scrypt`](https://nodejs.org/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback), [`crypto.randomBytes`](https://nodejs.org/api/crypto.html#cryptorandombytessize-callback) and [`crypto.timingSafeEqual`](https://nodejs.org/api/crypto.html#cryptotimingsafeequala-b) built in, so no extra package is needed.
+
+| Algorithm | Type | Recommended? ([OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)) |
+|-----------|------|------------------------|
+| MD5, SHA-1, SHA-256 (plain) | fast hash | **no**: billions of guesses per second on a GPU |
+| PBKDF2 | slow, CPU-hard | acceptable (high iteration count) |
+| bcrypt | slow, CPU-hard | acceptable (72-byte input limit) |
+| scrypt | slow, memory-hard | yes (built into Node) |
+| Argon2id | slow, memory-hard | yes, first choice (needs a package) |
+
+Other login rules from the [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html): use the same error text for "no such user" and "wrong password", rate-limit login attempts, rotate the session id after login (prevents session fixation), and compare secrets in constant time.
+
+```mermaid
+sequenceDiagram
+  participant Evil as evil.com
+  participant B as Browser
+  participant App as Task board
+  Evil->>B: page with hidden form POST /boards/1/delete
+  B->>App: POST + cookie? (SameSite=Lax: cookie NOT sent)
+  App-->>B: 403, no session / CSRF token missing
+  Note over B,App: two layers: SameSite cookie + synchronizer token
+```
+More on CSRF defences: [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+
 ### Common beginner mistakes
 - **Storing passwords in plain text or with MD5/SHA-1/SHA-256.** Use scrypt, bcrypt or argon2.
 - **Different error messages for "unknown email" and "wrong password"**, which lets attackers find valid accounts.
@@ -253,3 +315,14 @@ The exact field names may differ slightly from the reference app. The principle 
 5. Why return 404 rather than 403 for another user's board?
 6. What is a salt and which attack does it defeat?
 7. Why should logout delete the session row and not just the cookie?
+
+### Further reading / documentation
+- [MDN: Using HTTP cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies)
+- [MDN: Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie)
+- [Node.js: crypto module](https://nodejs.org/api/crypto.html)
+- [OWASP: Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- [OWASP: Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
+- [OWASP: Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+- [OWASP: CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
+- [OWASP: Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)
+- [OWASP: JSON Web Token Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html)

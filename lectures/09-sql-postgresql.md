@@ -225,6 +225,127 @@ export async function searchTasks({ boardId, q = '', page = 1, pageSize = 20 }) 
 }
 ```
 
+### More theory: normalization in plain words
+
+Normalization means "store each fact once". Duplicated facts drift apart. See [PostgreSQL: Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html) for the tools that enforce it.
+
+| Normal form | Rule | Violation example |
+|-------------|------|-------------------|
+| 1NF | One value per cell, no repeating groups | `tags = 'a,b,c'` |
+| 2NF | Non-key columns depend on the *whole* key | `(task_id, tag_id, task_title)` |
+| 3NF | Non-key columns depend *only* on the key | `tasks(user_id, user_email)` |
+
+```mermaid
+erDiagram
+    USERS ||--o{ TASKS : owns
+    TASKS ||--o{ TASK_TAGS : has
+    TAGS  ||--o{ TASK_TAGS : labels
+    USERS {
+        int id PK
+        text email UK
+    }
+    TASKS {
+        int id PK
+        int user_id FK
+        text title
+        boolean done
+    }
+    TAGS {
+        int id PK
+        text name UK
+    }
+    TASK_TAGS {
+        int task_id FK
+        int tag_id FK
+    }
+```
+
+### More theory: common PostgreSQL data types
+
+| Type | Use for | Notes |
+|------|---------|-------|
+| `integer` / `bigint` | Counters, ids | Use `GENERATED ALWAYS AS IDENTITY` for ids |
+| `numeric(p,s)` | Money | Exact; never `real` for money |
+| `text` | Strings | No performance penalty vs `varchar` |
+| `boolean` | Flags | `true`/`false`/`NULL` |
+| `timestamptz` | Points in time | Stores UTC, prefer over `timestamp` |
+| `date` | Calendar dates | |
+| `uuid` | Public ids | `gen_random_uuid()` |
+| `jsonb` | Semi-structured data | Indexable with GIN |
+
+Reference: [PostgreSQL: Data Types](https://www.postgresql.org/docs/current/datatype.html), [Identity columns](https://www.postgresql.org/docs/current/ddl-identity-columns.html).
+
+### More theory: JOIN types
+
+| Join | Returns |
+|------|---------|
+| `INNER JOIN` | Only rows matching on both sides |
+| `LEFT JOIN` | All left rows, `NULL`s where no match |
+| `RIGHT JOIN` | All right rows |
+| `FULL JOIN` | All rows from both sides |
+| `CROSS JOIN` | Every combination |
+
+See [PostgreSQL tutorial: Joins Between Tables](https://www.postgresql.org/docs/current/tutorial-join.html) and [Table expressions](https://www.postgresql.org/docs/current/queries-table-expressions.html). Remember: `NULL` is not equal to anything, test it with `IS NULL`.
+
+### More theory: indexes and `EXPLAIN`
+
+An index is a sorted side structure (B-tree by default) that lets PostgreSQL find rows without scanning the whole table. Primary keys and `UNIQUE` columns get one automatically; foreign key columns do **not**. Use [`EXPLAIN ANALYZE`](https://www.postgresql.org/docs/current/using-explain.html) to see whether a query uses an index. See [PostgreSQL: Indexes](https://www.postgresql.org/docs/current/indexes.html).
+
+```sql
+CREATE INDEX tasks_user_id_idx ON tasks (user_id);
+EXPLAIN ANALYZE SELECT * FROM tasks WHERE user_id = 1;
+```
+
+### More theory: ACID and isolation levels
+
+| Letter | Meaning |
+|--------|---------|
+| Atomicity | All statements of a transaction or none |
+| Consistency | Constraints hold before and after |
+| Isolation | Concurrent transactions don't see half-done work |
+| Durability | Committed data survives a crash (WAL) |
+
+| Isolation level (PostgreSQL) | Dirty read | Non-repeatable read | Phantom read | Serialization anomaly |
+|------------------------------|-----------|--------------------|--------------|----------------------|
+| Read Committed (default) | no | possible | possible | possible |
+| Repeatable Read | no | no | no (in PG) | possible |
+| Serializable | no | no | no | no |
+
+Reference: [PostgreSQL: Transactions tutorial](https://www.postgresql.org/docs/current/tutorial-transactions.html), [Transaction Isolation](https://www.postgresql.org/docs/current/transaction-iso.html).
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Pool as pg.Pool
+    participant DB as PostgreSQL
+    App->>Pool: pool.connect()
+    Pool-->>App: client
+    App->>DB: BEGIN
+    App->>DB: UPDATE accounts ... -100
+    App->>DB: UPDATE accounts ... +100
+    alt all OK
+        App->>DB: COMMIT
+    else error
+        App->>DB: ROLLBACK
+    end
+    App->>Pool: client.release()
+```
+
+In node-postgres a transaction must run on **one** client from the pool — see [node-postgres: Transactions](https://node-postgres.com/features/transactions) and [Pooling](https://node-postgres.com/features/pooling).
+
+### More theory: parameterized queries in `pg`
+
+`pg` sends the SQL text and the values separately (`$1`, `$2`, …), so values can never be parsed as SQL. See [node-postgres: Queries](https://node-postgres.com/features/queries) and the [OWASP SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html). Identifiers (table/column names, `ORDER BY` direction) cannot be parameters — pick them from an allow-list.
+
+| Approach | Safe? |
+|----------|-------|
+| `` `... WHERE id = ${id}` `` | No — injection |
+| `'... WHERE id = $1', [id]` | Yes |
+| `ORDER BY ${userColumn}` | No |
+| `ORDER BY ${allowed[col] ?? 'id'}` | Yes (allow-list) |
+
+Connection settings usually come from `DATABASE_URL`; `pg` also reads standard [libpq environment variables](https://www.postgresql.org/docs/current/libpq-envars.html).
+
 ### Common beginner mistakes
 - **Building SQL with template strings** (`` `... WHERE id = ${id}` ``). Always use `$1, $2` parameters.
 - **Putting the filter of a LEFT JOIN into `WHERE`**, which silently turns it into an INNER JOIN and drops rows with no match.
@@ -250,3 +371,20 @@ export async function searchTasks({ boardId, q = '', page = 1, pageSize = 20 }) 
 5. Which index helps `WHERE board_id = ? AND status = ?` and why?
 6. Why does moving a LEFT JOIN condition from `ON` to `WHERE` change the result?
 7. In which logical order are `WHERE`, `GROUP BY`, `SELECT` and `ORDER BY` evaluated?
+
+### Further reading / documentation
+
+- [PostgreSQL documentation (current)](https://www.postgresql.org/docs/current/)
+- [PostgreSQL tutorial](https://www.postgresql.org/docs/current/tutorial.html)
+- [PostgreSQL: Data Types](https://www.postgresql.org/docs/current/datatype.html)
+- [PostgreSQL: Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html)
+- [PostgreSQL: Joins Between Tables](https://www.postgresql.org/docs/current/tutorial-join.html)
+- [PostgreSQL: Indexes](https://www.postgresql.org/docs/current/indexes.html)
+- [PostgreSQL: Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)
+- [PostgreSQL: Transaction Isolation](https://www.postgresql.org/docs/current/transaction-iso.html)
+- [node-postgres documentation](https://node-postgres.com/)
+- [node-postgres: Queries](https://node-postgres.com/features/queries)
+- [node-postgres: Pooling](https://node-postgres.com/features/pooling)
+- [node-postgres: Transactions](https://node-postgres.com/features/transactions)
+- [OWASP SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)
+- [OWASP Query Parameterization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html)

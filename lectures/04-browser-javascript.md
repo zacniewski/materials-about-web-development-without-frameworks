@@ -184,3 +184,111 @@ list.addEventListener('click', async (event) => {
 3. Does `fetch` reject on a 500 response? How do you handle it?
 4. What does "progressive enhancement" mean?
 5. Compare returning JSON vs HTML fragments from the server.
+
+
+### Extra theory: the browser event loop
+Browser JavaScript runs on one main thread, driven by the [event loop defined in the HTML Standard](https://html.spec.whatwg.org/multipage/webappapis.html#event-loops). After each **task** (a click handler, a timer, a network callback) the browser drains the whole **microtask queue** (Promise callbacks, [`queueMicrotask`](https://developer.mozilla.org/en-US/docs/Web/API/queueMicrotask)), and then may **render** a frame. A long task blocks clicks *and* painting. See [MDN: microtask guide](https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide).
+
+```mermaid
+flowchart LR
+  T[Take one task] --> R[Run it to completion]
+  R --> M[Run all microtasks]
+  M --> F{Time to render?}
+  F -- yes --> RAF[requestAnimationFrame callbacks] --> P[Style, layout, paint]
+  F -- no --> T
+  P --> T
+```
+
+```js
+console.log('1 sync');
+setTimeout(() => console.log('4 task'), 0);
+Promise.resolve().then(() => console.log('3 microtask'));
+console.log('2 sync');
+```
+
+### Extra theory: scope, closures and `this`
+- `let`/`const` are **block-scoped**; `var` is function-scoped and hoisted — avoid it ([MDN: `let`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let)).
+- A [closure](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures) is a function that remembers the variables around it, which is why event handlers can use variables from where they were created.
+- [`this`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/this) in a normal function depends on *how it is called*; [arrow functions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions) take `this` from the surrounding code.
+
+| | `function` | arrow `=>` |
+|---|---|---|
+| Own `this` | yes (depends on call) | no (lexical) |
+| In `addEventListener` | `this` is the element | `this` is outer `this` |
+| Can be a constructor | yes | no |
+| `arguments` object | yes | no |
+
+### Extra theory: selecting and changing the DOM
+| Task | API | Note |
+|---|---|---|
+| find one | [`querySelector`](https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelector) | first match or `null` |
+| find many | [`querySelectorAll`](https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelectorAll) | static `NodeList` |
+| create | [`createElement`](https://developer.mozilla.org/en-US/docs/Web/API/Document/createElement) | then append it |
+| insert | [`append` / `prepend` / `before` / `after`](https://developer.mozilla.org/en-US/docs/Web/API/Element/append) | accept nodes or strings |
+| set text safely | [`textContent`](https://developer.mozilla.org/en-US/docs/Web/API/Node/textContent) | never parses HTML |
+| set HTML | [`innerHTML`](https://developer.mozilla.org/en-US/docs/Web/API/Element/innerHTML) | XSS risk with user data |
+| toggle classes | [`classList`](https://developer.mozilla.org/en-US/docs/Web/API/Element/classList) | `add`, `remove`, `toggle` |
+| custom data | [`dataset`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset) | reads `data-*` attributes |
+| remove | [`remove()`](https://developer.mozilla.org/en-US/docs/Web/API/Element/remove) | removes the element itself |
+
+### Extra theory: Promises and error handling with fetch
+A [Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise) is *pending*, then either *fulfilled* or *rejected*. [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) only rejects on **network** errors — a `404` or `500` still resolves, so always check `response.ok`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Pending
+  Pending --> Fulfilled: resolve(value)
+  Pending --> Rejected: reject(error)
+  Fulfilled --> [*]
+  Rejected --> [*]
+```
+
+```js
+async function loadTasks() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch('/api/tasks', { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+```
+[`AbortController`](https://developer.mozilla.org/en-US/docs/Web/API/AbortController) cancels a request; [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData) reads a whole form in one line.
+
+| Combinator | Resolves when | Rejects when |
+|---|---|---|
+| [`Promise.all`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all) | all fulfil | any rejects |
+| [`Promise.allSettled`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled) | all finish | never |
+| [`Promise.race`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/race) | first settles (fulfil) | first settles (reject) |
+| [`Promise.any`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/any) | first fulfils | all reject |
+
+### Extra theory: security basics in the browser
+- **XSS**: inserting user text with `innerHTML` lets attackers run scripts. Use `textContent` ([MDN: XSS](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/XSS)).
+- **CSP**: a [`Content-Security-Policy`](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP) header limits where scripts may come from.
+- **CSRF**: cookies are sent automatically, so state-changing requests need protection such as `SameSite` cookies or tokens ([MDN: CSRF](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF)).
+
+### Extra theory: storing data in the browser
+| Storage | Size | Lifetime | Sent to server | API |
+|---|---|---|---|---|
+| Cookies | ~4 KB | set by `Expires`/`Max-Age` | yes, every request | [`document.cookie`](https://developer.mozilla.org/en-US/docs/Web/API/Document/cookie) |
+| `localStorage` | ~5 MB | until cleared | no | [Web Storage](https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API) |
+| `sessionStorage` | ~5 MB | until the tab closes | no | [Web Storage](https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API) |
+| IndexedDB | large | until cleared | no | [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) |
+
+### Further reading / documentation
+- [MDN: JavaScript Guide](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide)
+- [MDN: Introduction to the DOM](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model/Introduction)
+- [MDN: Introduction to events](https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Building_blocks/Events)
+- [MDN: `addEventListener`](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener)
+- [MDN: Using Fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch)
+- [MDN: Using promises](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises)
+- [MDN: async function](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function)
+- [MDN: JavaScript modules](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules)
+- [MDN: Progressive enhancement](https://developer.mozilla.org/en-US/docs/Glossary/Progressive_Enhancement)
+- [WHATWG DOM Standard](https://dom.spec.whatwg.org/)
+- [WHATWG Fetch Standard](https://fetch.spec.whatwg.org/)
+- [WHATWG HTML: event loops](https://html.spec.whatwg.org/multipage/webappapis.html#event-loops)
+- [ECMAScript Language Specification (TC39)](https://tc39.es/ecma262/)

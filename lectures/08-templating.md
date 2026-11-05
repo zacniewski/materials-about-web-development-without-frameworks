@@ -197,6 +197,90 @@ graph LR
   P1 -.same function.-> F["HTMX fragment response"]
 ```
 
+### More theory: the three kinds of XSS
+
+| Type | Where the payload lives | Example |
+|------|-------------------------|---------|
+| Stored | In your database | A task title `<script>…</script>` shown to every user |
+| Reflected | In the request (query string) | `/search?q=<script>…</script>` echoed back |
+| DOM-based | Only in client JS | `el.innerHTML = location.hash` |
+
+Details: [OWASP: Cross Site Scripting](https://owasp.org/www-community/attacks/xss/), [MDN: Cross-site scripting](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/XSS), and the [OWASP XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html).
+
+```mermaid
+sequenceDiagram
+    participant A as Attacker
+    participant S as Server
+    participant DB as Database
+    participant V as Victim browser
+    A->>S: POST title="<script>steal()</script>"
+    S->>DB: INSERT (stored as-is, fine)
+    V->>S: GET /tasks
+    S->>DB: SELECT
+    alt no escaping
+        S-->>V: <li><script>steal()</script></li>
+        V->>A: cookies / data leaked
+    else escaped
+        S-->>V: <li>&lt;script&gt;…</li>
+        V-->>V: shown as harmless text
+    end
+```
+
+Key idea: **store raw, escape on output**, for the context you output into.
+
+### More theory: encoding per output context
+
+| Context | Example | Correct defence |
+|---------|---------|-----------------|
+| HTML body | `<p>${x}</p>` | HTML-escape `& < > " '` |
+| Quoted attribute | `<input value="${x}">` | HTML-escape, always quote |
+| URL in `href`/`src` | `<a href="${x}">` | Allow only `http:`/`https:`, then escape; use [`encodeURIComponent`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent) for parts |
+| Inside `<script>` | `const d = ${x}` | Avoid; or `JSON.stringify` + escape `<` as `\u003c` |
+| CSS | `style="${x}"` | Avoid untrusted values |
+| Unquoted attribute | `<div class=${x}>` | Never do this |
+
+### More theory: defence in depth with CSP and cookies
+
+Escaping is the main defence, but add layers:
+
+- [Content-Security-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP) — e.g. `default-src 'self'` blocks inline scripts even if one slips through. See the [OWASP CSP Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html).
+- [`HttpOnly` cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#restrict_access_to_cookies) — scripts cannot read the session cookie.
+- On the client, prefer [`textContent`](https://developer.mozilla.org/en-US/docs/Web/API/Node/textContent) over [`innerHTML`](https://developer.mozilla.org/en-US/docs/Web/API/Element/innerHTML).
+
+```mermaid
+flowchart LR
+    I[Untrusted input] --> V[Validate on input]
+    V --> S[(Store raw)]
+    S --> E[Escape per context on output]
+    E --> C[CSP header]
+    C --> B[Browser]
+    K[HttpOnly cookie] -.limits damage.-> B
+```
+
+### More theory: SSR vs CSR vs static
+
+| Approach | Where HTML is built | First paint | SEO | JS needed |
+|----------|---------------------|-------------|-----|-----------|
+| SSR (this course) | Server per request | Fast | Good | Optional |
+| CSR (SPA) | Browser via JS | Slower | Harder | Required |
+| Static (SSG) | At build time | Fastest | Good | Optional |
+| Hybrid / hydration | Server, then JS takes over | Fast | Good | Required |
+
+Further reading: [MDN: Introduction to client-side frameworks](https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Frameworks_libraries/Introduction).
+
+### More theory: tagged template literals
+
+Our engine uses JavaScript [tagged templates](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals#tagged_templates): the tag function receives the static string parts and the interpolated values separately, so it can escape *only* the values. A `SafeHtml` wrapper marks already-escaped fragments (partials) so they aren't escaped twice.
+
+```js
+function html(strings, ...values) {
+  return new SafeHtml(strings.reduce((out, s, i) =>
+    out + s + (i < values.length ? toSafe(values[i]) : ''), ''));
+}
+```
+
+Engines like [EJS](https://ejs.co/), [Nunjucks](https://mozilla.github.io/nunjucks/) and [Handlebars](https://handlebarsjs.com/guide/) apply the same rule: `<%= %>` / `{{ }}` escape, `<%- %>` / `{{{ }}}` / `| safe` don't.
+
 ### Common beginner mistakes
 - **Building HTML with plain template literals** (no `html` tag) — nothing is escaped.
 - **Using `raw()` on user data** "because it looked broken" — that re-opens XSS.
@@ -219,3 +303,18 @@ graph LR
 3. How does the `html` tag know which values are trusted?
 4. Why is escaping not sufficient for `href` attributes?
 5. Why is a partial-based template structure useful for HTMX?
+
+### Further reading / documentation
+
+- [OWASP Cross Site Scripting Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)
+- [OWASP: Cross Site Scripting (XSS)](https://owasp.org/www-community/attacks/xss/)
+- [OWASP Content Security Policy Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html)
+- [MDN: Cross-site scripting](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/XSS)
+- [MDN: Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
+- [MDN: Using HTTP cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies)
+- [MDN: Template literals (tagged templates)](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals)
+- [MDN: Node.textContent](https://developer.mozilla.org/en-US/docs/Web/API/Node/textContent)
+- [MDN: encodeURIComponent](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent)
+- [EJS](https://ejs.co/)
+- [Nunjucks](https://mozilla.github.io/nunjucks/)
+- [Handlebars guide](https://handlebarsjs.com/guide/)

@@ -230,6 +230,63 @@ flowchart LR
   W["write failing test"] --> C["write minimal code"] --> P["test passes"] --> RF["refactor safely"] --> W
 ```
 
+### 9. More theory: defence in depth and trust boundaries
+No single check is enough. Each layer assumes the one before it may fail ([OWASP Top 10](https://owasp.org/Top10/), [OWASP Input Validation Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html)).
+
+```mermaid
+flowchart LR
+  U[Untrusted input] --> RL[rate limit] --> CS[CSRF check] --> AU[auth + ownership] --> V[validation allow-list]
+  V --> Q[parameterized query via Prisma] --> DB[(PostgreSQL)]
+  DB --> T[template with escaping] --> H[security headers + CSP] --> B[Browser]
+```
+
+| Attack | Main defence | Second layer | Docs |
+|--------|--------------|--------------|------|
+| SQL injection | parameterized queries (Prisma, `$queryRaw` tagged template) | least-privilege DB user | [OWASP SQLi Prevention](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html) |
+| XSS | context-aware output escaping | CSP, `HttpOnly` cookies | [OWASP XSS Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html) |
+| CSRF | synchronizer token | `SameSite` cookies | [OWASP CSRF](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html) |
+| IDOR (other user's board) | ownership in every `where` | 404 instead of 403 | [OWASP Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html) |
+| Brute force | rate limiting | slow hashing | [OWASP Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) |
+| Clickjacking | `frame-ancestors 'none'` | `X-Frame-Options: DENY` | [MDN: CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP) |
+| Vulnerable packages | `npm audit`, update | lockfile, fewer deps | [npm audit](https://docs.npmjs.com/cli/commands/npm-audit) |
+
+### 10. Reference: security headers
+| Header | Recommended value | Why |
+|--------|-------------------|-----|
+| [`Content-Security-Policy`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy) | `default-src 'self'; frame-ancestors 'none'` | blocks injected scripts from other origins and inline |
+| [`Strict-Transport-Security`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security) | `max-age=31536000; includeSubDomains` | browser always uses HTTPS |
+| [`X-Content-Type-Options`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options) | `nosniff` | no MIME guessing |
+| [`Referrer-Policy`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy) | `strict-origin-when-cross-origin` | does not leak full URLs |
+| `X-Frame-Options` | `DENY` | old-browser clickjacking defence |
+
+More: [OWASP HTTP Headers Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html).
+
+### 11. More theory: the test pyramid and `node:test` features
+Many fast unit tests at the bottom, fewer integration tests in the middle, very few slow end-to-end tests at the top.
+
+```mermaid
+flowchart TB
+  E2E["E2E (browser): few, slow"] --> INT["Integration (HTTP + test DB): some"] --> UNIT["Unit (pure functions): many, fast"]
+```
+
+| Level | Example in Task board | Speed | Finds |
+|-------|----------------------|-------|-------|
+| Unit | `validateTask({ title: '' })` | ms | logic bugs |
+| Integration | `POST /boards/1/tasks` with a cookie, check DB | 10–100 ms | wiring, SQL, auth bugs |
+| End-to-end | real browser clicks "Add" | seconds | UI and JS bugs |
+
+Useful parts of the built-in runner ([Node.js: test runner](https://nodejs.org/api/test.html), [Node.js: assert](https://nodejs.org/api/assert.html)):
+
+| Feature | API |
+|---------|-----|
+| group tests | `describe()` / `it()` or nested `test()` |
+| setup/teardown | `before`, `after`, `beforeEach`, `afterEach` |
+| run only one / skip | `test.only` (with `--test-only`), `test.skip`, `test.todo` |
+| mocks | `mock.fn()`, `mock.method(obj, 'name')`, `mock.timers` |
+| coverage | `node --test --experimental-test-coverage` |
+| watch mode | `node --test --watch` |
+| deep equality | `assert.deepStrictEqual`, `assert.rejects` |
+
 ### Common beginner mistakes
 - **Relying on client-side checks only** (`required`, `maxlength`, JS validation).
 - **Validating but not normalising**, e.g. not trimming, or treating `"5"` and `5` the same by accident.
@@ -258,3 +315,15 @@ flowchart LR
 5. What should be unit-tested and what integration-tested in a web app?
 6. How does escaping prevent XSS, and why is CSP still useful?
 7. Why should tests use a separate database, and how do you keep tests independent?
+
+### Further reading / documentation
+- [OWASP Top 10](https://owasp.org/Top10/)
+- [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/)
+- [OWASP: Input Validation Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html)
+- [OWASP: XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)
+- [OWASP: SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)
+- [OWASP: HTTP Headers Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html)
+- [MDN: Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
+- [Node.js: test runner (`node:test`)](https://nodejs.org/api/test.html)
+- [Node.js: assert](https://nodejs.org/api/assert.html)
+- [npm audit](https://docs.npmjs.com/cli/commands/npm-audit)

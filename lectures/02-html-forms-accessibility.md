@@ -220,3 +220,102 @@ graph TD
 3. Why is client-side validation not enough?
 4. Why must a page have a `lang` attribute and a viewport meta tag?
 5. Name four practices that improve accessibility.
+
+
+### Extra theory: the content model
+The [WHATWG HTML Living Standard](https://html.spec.whatwg.org/multipage/) sorts elements into [content categories](https://developer.mozilla.org/en-US/docs/Web/HTML/Content_categories): *flow*, *phrasing*, *sectioning*, *heading*, *interactive* and so on. Each element says which categories it may contain. For example, a `<p>` may only contain phrasing content, so a `<div>` inside a `<p>` is invalid, and an `<a>` must not contain another interactive element such as a `<button>`. Check your pages with the [W3C Markup Validator](https://validator.w3.org/).
+
+### Extra theory: landmarks and the outline
+Screen-reader users jump around a page by **landmarks** and **headings**, not by reading top to bottom. Semantic elements create landmarks automatically ([WAI-ARIA landmark roles](https://www.w3.org/WAI/ARIA/apg/practices/landmark-regions/)).
+
+| Element | Implicit ARIA role | Note |
+|---|---|---|
+| [`<header>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/header) (top-level) | `banner` | site header |
+| [`<nav>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/nav) | `navigation` | major link groups |
+| [`<main>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/main) | `main` | exactly one per page |
+| [`<aside>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/aside) | `complementary` | related side content |
+| [`<footer>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/footer) (top-level) | `contentinfo` | site footer |
+| [`<form>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/form) with a name | `form` | needs `aria-label` or `aria-labelledby` |
+| `<section>` with a name | `region` | needs an accessible name |
+
+```mermaid
+graph TD
+  Body[body] --> H[header: banner]
+  Body --> N[nav: navigation]
+  Body --> M[main: main]
+  Body --> A[aside: complementary]
+  Body --> F[footer: contentinfo]
+  M --> H1[h1 Tasks]
+  M --> S[section: region]
+  S --> H2[h2 New task]
+  S --> Form[form]
+```
+
+### Extra theory: input types and attributes
+Choosing the right [`<input>` type](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input#input_types) gives free validation and a better keyboard on phones.
+
+| `type` | What the browser gives you | Useful attributes |
+|---|---|---|
+| `text` | plain text | `minlength`, `maxlength`, `pattern` |
+| `email` | checks `x@y` form, email keyboard | `multiple` |
+| `number` | spinner, numeric keyboard | `min`, `max`, `step` |
+| `date` | date picker | `min`, `max` |
+| `checkbox` | on/off; sent only when checked | `checked`, `value` |
+| `radio` | one of a group (same `name`) | `checked`, `value` |
+| `password` | hidden characters | `autocomplete="current-password"` |
+| `file` | file chooser; needs `enctype="multipart/form-data"` | `accept`, `multiple` |
+| `hidden` | not shown, still sent | `value` |
+
+The [`autocomplete`](https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/autocomplete) attribute helps password managers and users with motor disabilities.
+
+### Extra theory: how form data is encoded
+The [`enctype`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/enctype) attribute decides the body format ([form submission algorithm](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-2)).
+
+| `method` / `enctype` | Where the data goes | Looks like |
+|---|---|---|
+| `GET` | query string of the URL | `/search?q=milk&done=on` |
+| `POST`, `application/x-www-form-urlencoded` (default) | body | `title=Buy+milk&due=2026-11-05` |
+| `POST`, `multipart/form-data` | body, parts with boundaries | needed for file uploads |
+| `POST`, `text/plain` | body | for debugging only |
+
+### Extra theory: constraint validation
+The browser runs [client-side validation](https://developer.mozilla.org/en-US/docs/Learn/Forms/Form_validation) before submitting. Each control has a [`validity`](https://developer.mozilla.org/en-US/docs/Web/API/ValidityState) object; CSS can style `:invalid` and `:user-invalid`. **Never** trust it alone — the server must validate again, because anyone can send a request with `curl`.
+
+```mermaid
+flowchart TD
+  U[User clicks Submit] --> V{novalidate?}
+  V -- yes --> E[Fire submit event]
+  V -- no --> C{All controls valid?}
+  C -- no --> R[Show first error, focus it, stop]
+  C -- yes --> E
+  E --> P{preventDefault called?}
+  P -- yes --> J[JavaScript handles it]
+  P -- no --> S[Browser sends request, navigates]
+  S --> SV[Server validates again]
+```
+
+### Extra theory: WCAG principles (POUR)
+The [Web Content Accessibility Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/) group rules under four principles ([W3C WAI overview](https://www.w3.org/WAI/standards-guidelines/wcag/)):
+
+| Principle | In plain words | Example check |
+|---|---|---|
+| **Perceivable** | users can see or hear it | `alt` text, colour contrast 4.5:1 |
+| **Operable** | users can use it | everything works with a keyboard, visible focus |
+| **Understandable** | users can make sense of it | clear labels, helpful error messages |
+| **Robust** | works with assistive tech | valid HTML, correct roles and names |
+
+The first rule of [ARIA](https://www.w3.org/TR/using-aria/): if a native HTML element does the job, use it instead of adding ARIA. See the [ARIA Authoring Practices Guide](https://www.w3.org/WAI/ARIA/apg/) for patterns.
+
+### Further reading / documentation
+- [WHATWG HTML Living Standard](https://html.spec.whatwg.org/multipage/)
+- [MDN: HTML elements reference](https://developer.mozilla.org/en-US/docs/Web/HTML/Element)
+- [MDN: Web forms guide](https://developer.mozilla.org/en-US/docs/Learn/Forms)
+- [MDN: `<input>` element](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input)
+- [MDN: Client-side form validation](https://developer.mozilla.org/en-US/docs/Learn/Forms/Form_validation)
+- [MDN: Accessibility](https://developer.mozilla.org/en-US/docs/Web/Accessibility)
+- [MDN: ARIA](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA)
+- [W3C WAI: Introduction to Web Accessibility](https://www.w3.org/WAI/fundamentals/accessibility-intro/)
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
+- [W3C WAI: ARIA Authoring Practices Guide](https://www.w3.org/WAI/ARIA/apg/)
+- [W3C: Using ARIA](https://www.w3.org/TR/using-aria/)
+- [W3C Markup Validation Service](https://validator.w3.org/)

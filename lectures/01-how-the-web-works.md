@@ -8,7 +8,7 @@ Think of the Web as a **restaurant**. You (the *browser*) are a customer, the wa
 The important idea: the kitchen **does not remember you** between orders (HTTP is *stateless*). If you want the waiter to recognise you, you show a **loyalty card** each time — that is a **cookie**. Words you will meet are explained in the [glossary](../resources/glossary.md).
 
 ### 1. Clients, servers and protocols
-The Web is a **client–server** system. A *user agent* (browser, `curl`) sends a **request**; a server returns a **response**. HTTP is a text-based (HTTP/1.1) application protocol on top of TCP (or QUIC for HTTP/3).
+The Web is a **client–server** system. A *user agent* (browser, `curl`) sends a **request**; a server returns a **response**. [HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP) is a text-based (HTTP/1.1) application protocol on top of [TCP](https://www.rfc-editor.org/rfc/rfc9293) (or [QUIC](https://www.rfc-editor.org/rfc/rfc9000) for HTTP/3).
 
 ```mermaid
 graph TB
@@ -204,3 +204,128 @@ graph LR
 4. What does DNS return and when is it consulted?
 5. How does a `304 Not Modified` response save bandwidth?
 6. HTTP is stateless — how do websites remember logged-in users?
+
+
+### Extra theory: DNS in more detail
+Before any HTTP happens, the browser must turn a name like `example.com` into an IP address. This is the job of the [Domain Name System](https://developer.mozilla.org/en-US/docs/Glossary/DNS) (defined in [RFC 1034](https://www.rfc-editor.org/rfc/rfc1034) and [RFC 1035](https://www.rfc-editor.org/rfc/rfc1035)). In plain words, DNS is the **phone book** of the Internet. The answer is cached at several levels (browser, operating system, resolver), each for the record's **TTL** (time to live).
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant R as Recursive resolver
+  participant Root as Root server
+  participant TLD as .com server
+  participant Auth as Authoritative server
+  B->>R: Where is example.com?
+  R->>Root: example.com?
+  Root-->>R: ask the .com servers
+  R->>TLD: example.com?
+  TLD-->>R: ask ns.example.com
+  R->>Auth: example.com?
+  Auth-->>R: A 93.184.215.14 (TTL 3600)
+  R-->>B: 93.184.215.14
+```
+
+| Record type | Meaning | Example |
+|---|---|---|
+| `A` | IPv4 address | `93.184.215.14` |
+| `AAAA` | IPv6 address | `2606:2800::1` |
+| `CNAME` | alias to another name | `www` → `example.com` |
+| `MX` | mail server | `mail.example.com` |
+| `TXT` | free text (verification, SPF) | `"v=spf1 ..."` |
+
+### Extra theory: TLS and HTTPS
+[HTTPS](https://developer.mozilla.org/en-US/docs/Glossary/HTTPS) is simply HTTP sent inside a [TLS](https://developer.mozilla.org/en-US/docs/Web/Security/Transport_Layer_Security) tunnel ([TLS 1.3 is RFC 8446](https://www.rfc-editor.org/rfc/rfc8446)). TLS gives three guarantees: **confidentiality** (nobody can read it), **integrity** (nobody can change it unnoticed) and **authentication** (the server proves its identity with a certificate signed by a trusted authority).
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant S as Server
+  C->>S: TCP SYN
+  S-->>C: SYN-ACK
+  C->>S: ACK
+  C->>S: ClientHello (versions, ciphers, key share)
+  S-->>C: ServerHello + certificate + Finished
+  C->>S: Finished
+  C->>S: GET / (encrypted)
+  S-->>C: 200 OK (encrypted)
+```
+
+### Extra theory: request methods and their properties
+The [HTTP semantics RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) defines what each [method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) means. Two properties matter a lot: **safe** (it should not change anything on the server) and **idempotent** (doing it twice has the same effect as doing it once).
+
+| Method | Typical use | Safe | Idempotent | Has body |
+|---|---|---|---|---|
+| `GET` | read a resource | yes | yes | no |
+| `HEAD` | like GET, headers only | yes | yes | no |
+| `POST` | create / submit a form | no | no | yes |
+| `PUT` | replace a resource | no | yes | yes |
+| `PATCH` | partly change a resource | no | no | yes |
+| `DELETE` | remove a resource | no | yes | optional |
+| `OPTIONS` | ask what is allowed (CORS preflight) | yes | yes | optional |
+
+### Extra theory: important headers
+Headers are metadata about the message ([MDN header reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers)).
+
+| Header | Direction | Purpose |
+|---|---|---|
+| [`Host`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host) | request | which site on this server |
+| [`Content-Type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) | both | the format of the body |
+| [`Accept`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept) | request | formats the client prefers (content negotiation) |
+| [`Cache-Control`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control) | both | caching rules |
+| [`Set-Cookie`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie) | response | store a cookie in the browser |
+| [`Location`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Location) | response | where to go for a redirect (3xx) |
+| [`ETag`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag) | response | version tag used for revalidation |
+
+### Extra theory: caching and revalidation
+[HTTP caching](https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching) ([RFC 9111](https://www.rfc-editor.org/rfc/rfc9111)) lets the browser reuse a response. While a response is **fresh** (`max-age`), it is used without asking. When it becomes **stale**, the browser asks "has it changed?" with `If-None-Match`; the server answers `304 Not Modified` with no body if it did not.
+
+```mermaid
+flowchart TD
+  A[Need /style.css] --> B{In cache?}
+  B -- no --> N[Send normal GET] --> S[200 + body, store]
+  B -- yes --> F{Still fresh?}
+  F -- yes --> U[Use cached copy, no request]
+  F -- no --> R[GET with If-None-Match: ETag]
+  R --> Q{Changed?}
+  Q -- no --> M[304 Not Modified, reuse cache]
+  Q -- yes --> S
+```
+
+### HTTP/1.1 vs HTTP/2 vs HTTP/3
+| Feature | HTTP/1.1 ([RFC 9112](https://www.rfc-editor.org/rfc/rfc9112)) | HTTP/2 ([RFC 9113](https://www.rfc-editor.org/rfc/rfc9113)) | HTTP/3 ([RFC 9114](https://www.rfc-editor.org/rfc/rfc9114)) |
+|---|---|---|---|
+| Format | text | binary frames | binary frames |
+| Transport | TCP | TCP | QUIC over UDP |
+| Many requests on one connection | one at a time | multiplexed streams | multiplexed, no head-of-line blocking |
+| Header compression | none | HPACK | QPACK |
+| Encryption | optional | in practice always | always (built in) |
+
+### Extra theory: same-origin policy and CORS
+An **origin** is scheme + host + port. The browser's [same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Same-origin_policy) stops a script from one origin reading responses from another. A server can relax this with [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) headers such as `Access-Control-Allow-Origin` (specified in the [WHATWG Fetch Standard](https://fetch.spec.whatwg.org/)).
+
+| URL compared with `https://app.example.com` | Same origin? | Why |
+|---|---|---|
+| `https://app.example.com/tasks` | yes | only path differs |
+| `http://app.example.com` | no | scheme differs |
+| `https://api.example.com` | no | host differs |
+| `https://app.example.com:8443` | no | port differs |
+
+### Further reading / documentation
+- [MDN: An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview)
+- [MDN: HTTP messages](https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages)
+- [MDN: HTTP response status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
+- [MDN: Using HTTP cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies)
+- [MDN: HTTP caching](https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching)
+- [MDN: CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
+- [RFC 9110 — HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110)
+- [RFC 9111 — HTTP Caching](https://www.rfc-editor.org/rfc/rfc9111)
+- [RFC 9112 — HTTP/1.1](https://www.rfc-editor.org/rfc/rfc9112)
+- [RFC 9113 — HTTP/2](https://www.rfc-editor.org/rfc/rfc9113)
+- [RFC 9114 — HTTP/3](https://www.rfc-editor.org/rfc/rfc9114)
+- [RFC 6265 — HTTP State Management (cookies)](https://www.rfc-editor.org/rfc/rfc6265)
+- [RFC 3986 — URI Generic Syntax](https://www.rfc-editor.org/rfc/rfc3986)
+- [RFC 8446 — TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446)
+- [WHATWG URL Standard](https://url.spec.whatwg.org/)
+- [WHATWG Fetch Standard](https://fetch.spec.whatwg.org/)
+- [curl documentation](https://curl.se/docs/)

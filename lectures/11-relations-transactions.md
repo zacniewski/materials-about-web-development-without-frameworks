@@ -267,6 +267,68 @@ export async function moveTask(ctx, taskId, targetBoardId) {
 ```
 Note that we use `tx`, not `prisma`, inside the callback. A call on `prisma` would run *outside* the transaction.
 
+### 10. More theory: referential actions (`onDelete` / `onUpdate`)
+A foreign key is a promise: "this `board_id` always points to a real board". When the parent row is deleted, the database must decide what happens to the children. Prisma maps the `onDelete` argument directly to the PostgreSQL `ON DELETE` clause (see [Prisma: referential actions](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/referential-actions) and [PostgreSQL: foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK)).
+
+| `onDelete` value | What happens to children | Typical use in the Task board |
+|------------------|--------------------------|-------------------------------|
+| `Cascade` | deleted together with the parent | Board → Task (a task without a board makes no sense) |
+| `Restrict` / `NoAction` | delete of the parent fails with an error | User → Board, if you want to force "empty the account first" |
+| `SetNull` | FK column becomes `NULL` (must be optional) | Task → assignee (user leaves, task stays) |
+| `SetDefault` | FK column gets its default value | rare; needs a valid default row |
+
+```mermaid
+flowchart TD
+  D[DELETE board 7] --> Q{onDelete on Task.board?}
+  Q -- Cascade --> C[tasks of board 7 deleted too]
+  Q -- Restrict --> E[error P2003, nothing deleted]
+  Q -- SetNull --> N[tasks keep living, boardId = NULL]
+```
+
+### 11. More theory: ACID and isolation levels
+A [transaction](https://www.postgresql.org/docs/current/tutorial-transactions.html) gives four guarantees, usually called **ACID**:
+
+| Letter | Meaning | In plain words |
+|--------|---------|----------------|
+| A — Atomicity | all or nothing | either both the task move and the log row are saved, or neither |
+| C — Consistency | constraints always hold | FKs, `UNIQUE`, `CHECK` are never violated after commit |
+| I — Isolation | concurrent transactions don't see half-done work | controlled by the isolation level below |
+| D — Durability | committed = survives a crash | PostgreSQL writes to the WAL before saying "OK" |
+
+PostgreSQL supports these [isolation levels](https://www.postgresql.org/docs/current/transaction-iso.html):
+
+| Level | Dirty read | Non-repeatable read | Phantom read | Serialization anomaly |
+|-------|-----------|---------------------|--------------|-----------------------|
+| Read Committed (default) | no | possible | possible | possible |
+| Repeatable Read | no | no | no (in PostgreSQL) | possible |
+| Serializable | no | no | no | no (may abort with a retry error) |
+
+In Prisma you choose it per transaction: `prisma.$transaction(fn, { isolationLevel: 'Serializable', timeout: 5000 })` ([Prisma: transactions](https://www.prisma.io/docs/orm/prisma-client/queries/transactions)).
+
+```mermaid
+stateDiagram-v2
+  [*] --> Active: BEGIN
+  Active --> Active: queries
+  Active --> Committed: COMMIT (callback returns)
+  Active --> RolledBack: ROLLBACK (callback throws)
+  Active --> RolledBack: timeout / serialization error
+  Committed --> [*]
+  RolledBack --> [*]
+```
+
+### 12. Reference: relation query cheat sheet
+| Want to... | Prisma Client | SQL idea |
+|-----------|---------------|----------|
+| load children with parent | `include: { tasks: true }` | second query with `IN (...)` |
+| load only some fields | `select: { name: true, tasks: { select: { title: true } } }` | narrower `SELECT` |
+| filter parents by children | `where: { tasks: { some: { status: 'DONE' } } }` | `EXISTS (subquery)` |
+| count children | `_count: { select: { tasks: true } }` | `COUNT(*) ... GROUP BY` |
+| link existing row | `connect: { id }` | set FK / insert in join table |
+| unlink | `disconnect: { id }` | delete from join table / FK = NULL |
+| replace all links | `set: [{ id: 1 }, { id: 2 }]` | delete + insert in join table |
+
+See [Prisma: relation queries](https://www.prisma.io/docs/orm/prisma-client/queries/relation-queries) and [Prisma: query optimization (N+1)](https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance). To see what PostgreSQL actually does, use [`EXPLAIN`](https://www.postgresql.org/docs/current/using-explain.html), and remember that PostgreSQL does **not** index foreign keys automatically, so add `@@index([boardId])` ([Prisma: indexes](https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes)). Seeding details: [Prisma: seeding](https://www.prisma.io/docs/orm/prisma-migrate/workflows/seeding).
+
 ### Common beginner mistakes
 - **Querying relations inside a loop** (`for ... await prisma.x.findMany`), which is classic N+1.
 - **Using `include` everywhere**, which loads huge object graphs. Use `select` for the fields you actually render.
@@ -292,3 +354,16 @@ Note that we use `tx`, not `prisma`, inside the callback. A call on `prisma` wou
 5. Why must seed scripts be idempotent?
 6. Where does the foreign key live in a 1–N relation?
 7. Why can a "check, then update" transaction still break a rule under `READ COMMITTED`?
+
+### Further reading / documentation
+- [Prisma: relations](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations)
+- [Prisma: referential actions](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/referential-actions)
+- [Prisma: relation queries](https://www.prisma.io/docs/orm/prisma-client/queries/relation-queries)
+- [Prisma: transactions and batch queries](https://www.prisma.io/docs/orm/prisma-client/queries/transactions)
+- [Prisma: query optimization](https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance)
+- [Prisma: indexes](https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes)
+- [Prisma: seeding](https://www.prisma.io/docs/orm/prisma-migrate/workflows/seeding)
+- [PostgreSQL: constraints and foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html)
+- [PostgreSQL: transactions tutorial](https://www.postgresql.org/docs/current/tutorial-transactions.html)
+- [PostgreSQL: transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html)
+- [PostgreSQL: using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)

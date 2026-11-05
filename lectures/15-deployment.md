@@ -237,6 +237,89 @@ flowchart TB
   CPU --> M
 ```
 
+### 11. More theory: the full twelve factors
+The [Twelve-Factor App](https://12factor.net/) lists twelve rules. Here is how each one maps to our Task board:
+
+| # | Factor | Task board practice |
+|---|--------|---------------------|
+| I | [Codebase](https://12factor.net/codebase) | one Git repo, many deploys |
+| II | [Dependencies](https://12factor.net/dependencies) | `package.json` + `package-lock.json`, `npm ci` |
+| III | [Config](https://12factor.net/config) | `DATABASE_URL`, `SESSION_SECRET` in env vars |
+| IV | [Backing services](https://12factor.net/backing-services) | PostgreSQL addressed only by URL |
+| V | [Build, release, run](https://12factor.net/build-release-run) | `npm ci` → `prisma migrate deploy` → `node server.js` |
+| VI | [Processes](https://12factor.net/processes) | stateless; sessions in the DB, not in memory |
+| VII | [Port binding](https://12factor.net/port-binding) | app listens on `PORT`, Nginx proxies |
+| VIII | [Concurrency](https://12factor.net/concurrency) | scale by running more processes |
+| IX | [Disposability](https://12factor.net/disposability) | fast start, graceful shutdown on `SIGTERM` |
+| X | [Dev/prod parity](https://12factor.net/dev-prod-parity) | same PostgreSQL version locally (Docker) |
+| XI | [Logs](https://12factor.net/logs) | JSON lines to stdout, collected by journald/Docker |
+| XII | [Admin processes](https://12factor.net/admin-processes) | `npx prisma db seed` as one-off commands |
+
+### 12. More theory: containers with Docker
+A container packages the app and its runtime so it runs the same everywhere ([Docker overview](https://docs.docker.com/get-started/docker-overview/)). A minimal image for the Task board, using a [multi-stage build](https://docs.docker.com/build/building/multi-stage/):
+```dockerfile
+FROM node:22-slim AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+FROM node:22-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npx prisma generate
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+With [Docker Compose](https://docs.docker.com/compose/) you describe the app and PostgreSQL together. Follow the [Dockerfile best practices](https://docs.docker.com/build/building/best-practices/): small base image, a non-root user, a `.dockerignore`, and no secrets baked into the image.
+
+| | systemd on a VM | Docker / Compose | PaaS (Render, Fly, Heroku) |
+|---|---|---|---|
+| Setup effort | medium | medium | low |
+| Control | full | full | limited |
+| Same env in dev and prod | weak | strong | medium |
+| Restart on crash | `Restart=always` | `restart: unless-stopped` | built in |
+| Logs | `journalctl -u app` | `docker logs` | web dashboard |
+
+```mermaid
+flowchart LR
+  Dev[git push] --> CI[CI: npm ci + node --test]
+  CI --> IMG[docker build + push image]
+  IMG --> SRV[Server: pull image]
+  SRV --> MIG[prisma migrate deploy]
+  MIG --> RUN[start new container]
+  RUN --> HC{health check /healthz OK?}
+  HC -- yes --> LIVE[switch traffic, stop old]
+  HC -- no --> RB[keep old version, roll back]
+```
+
+### 13. More theory: signals, health checks and Node.js in production
+When systemd or Docker stops the app, it sends [`SIGTERM`](https://nodejs.org/api/process.html#signal-events), waits (10 s by default in Docker), then sends `SIGKILL`. Your handler should call [`server.close()`](https://nodejs.org/api/http.html#serverclosecallback) to stop accepting new connections, finish running requests, then `prisma.$disconnect()`.
+
+```mermaid
+sequenceDiagram
+  participant O as systemd / Docker
+  participant N as Node process
+  participant DB as PostgreSQL
+  O->>N: SIGTERM
+  N->>N: server.close() (no new connections)
+  N->>N: finish in-flight requests
+  N->>DB: prisma.$disconnect()
+  N->>O: process.exit(0)
+  Note over O,N: if still alive after timeout, SIGKILL
+```
+
+Other production notes: set `NODE_ENV=production` ([Node.js: production best practices](https://nodejs.org/en/learn/getting-started/nodejs-the-difference-between-development-and-production)), put TLS on the reverse proxy ([Nginx reverse proxy](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/), free certificates from [Let's Encrypt](https://letsencrypt.org/docs/)), enable caching of static files with [`Cache-Control`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control) and compression, and back up the database regularly with [`pg_dump`](https://www.postgresql.org/docs/current/app-pgdump.html). Prisma's production workflow is described in [Prisma: deploying database changes](https://www.prisma.io/docs/orm/prisma-client/deployment/deploy-database-changes-with-prisma-migrate).
+
+| Log level | When to use | Example |
+|-----------|-------------|---------|
+| `error` | request failed, needs attention | DB connection lost |
+| `warn` | unusual but handled | rate limit hit |
+| `info` | normal important events | server started, user logged in |
+| `debug` | details for development only | SQL queries |
+
 ### Common beginner mistakes
 - **Committing `.env`** or hard-coding secrets in the source.
 - **Running `node src/server.js` in an SSH session** and closing the terminal, which kills the app. Use systemd/pm2.
@@ -265,3 +348,18 @@ flowchart TB
 5. How would you find out why `/boards/1` takes 800 ms?
 6. Why use `npm ci` instead of `npm install` on the server?
 7. Which settings should differ between development and production, and where do they come from?
+
+### Further reading / documentation
+- [The Twelve-Factor App](https://12factor.net/)
+- [Docker: overview](https://docs.docker.com/get-started/docker-overview/)
+- [Docker: multi-stage builds](https://docs.docker.com/build/building/multi-stage/)
+- [Docker: Dockerfile best practices](https://docs.docker.com/build/building/best-practices/)
+- [Docker Compose](https://docs.docker.com/compose/)
+- [Node.js: process signal events](https://nodejs.org/api/process.html#signal-events)
+- [Node.js: http.Server.close](https://nodejs.org/api/http.html#serverclosecallback)
+- [Node.js: development vs production](https://nodejs.org/en/learn/getting-started/nodejs-the-difference-between-development-and-production)
+- [Prisma: deploying database changes](https://www.prisma.io/docs/orm/prisma-client/deployment/deploy-database-changes-with-prisma-migrate)
+- [PostgreSQL: pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html)
+- [Nginx: reverse proxy](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)
+- [Let's Encrypt documentation](https://letsencrypt.org/docs/)
+- [MDN: Cache-Control](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control)

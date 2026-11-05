@@ -192,3 +192,107 @@ graph TD
 3. What does `col-12 col-md-6 col-xl-4` mean on phone, tablet and desktop?
 4. How does Bootstrap show validation errors and keep them accessible?
 5. Why load Bootstrap's JS with `defer`?
+
+
+### Extra theory: the box model
+Every element is a rectangle made of **content**, **padding**, **border** and **margin** ([MDN: box model](https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/The_box_model)). With the default `box-sizing: content-box`, `width` covers only the content; with [`box-sizing: border-box`](https://developer.mozilla.org/en-US/docs/Web/CSS/box-sizing) (which Bootstrap's Reboot sets for everything) `width` includes padding and border, which is much easier to reason about.
+
+```mermaid
+graph LR
+  M[margin] --> B[border] --> P[padding] --> C[content]
+```
+
+### Extra theory: specificity in numbers
+[Specificity](https://developer.mozilla.org/en-US/docs/Web/CSS/Specificity) is counted as three columns (IDs, classes/attributes/pseudo-classes, elements/pseudo-elements). Compare column by column from the left.
+
+| Selector | Specificity | Wins against |
+|---|---|---|
+| `li` | 0-0-1 | — |
+| `ul li` | 0-0-2 | `li` |
+| `.task` | 0-1-0 | any number of element selectors |
+| `.task.done` | 0-2-0 | `.task` |
+| `#main .task` | 1-1-0 | any number of classes |
+| `style="..."` | inline | all selectors |
+| `!important` | special layer | normal declarations (avoid) |
+
+Newer CSS also has [cascade layers (`@layer`)](https://developer.mozilla.org/en-US/docs/Web/CSS/@layer), which are compared *before* specificity.
+
+```mermaid
+flowchart TD
+  D[Several declarations for one property] --> O{Origin and importance}
+  O --> L{Cascade layer}
+  L --> S{Specificity}
+  S --> R{Order in source}
+  R --> W[Winning value]
+  W --> I{No value at all?}
+  I -- inherited property --> Inh[Take parent value]
+  I -- otherwise --> Init[Use initial value]
+```
+
+### Extra theory: units
+| Unit | Relative to | Good for |
+|---|---|---|
+| `px` | the CSS pixel | borders, small fixed details |
+| `rem` | root font size | font sizes, spacing (Bootstrap uses it) |
+| `em` | current font size | padding that grows with text |
+| `%` | parent size | fluid widths |
+| `vw` / `vh` | viewport width / height | full-screen sections |
+| `fr` | free space in a grid | grid tracks |
+
+See [MDN: CSS values and units](https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units).
+
+### Extra theory: display, positioning and layout modes
+| Value | Behaviour |
+|---|---|
+| `display: block` | full width, starts on a new line |
+| `display: inline` | flows in text, ignores width/height |
+| `display: inline-block` | flows in text, but respects width/height |
+| [`display: flex`](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout) | one-dimensional layout of children |
+| [`display: grid`](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout) | two-dimensional layout of children |
+| [`position: relative / absolute / fixed / sticky`](https://developer.mozilla.org/en-US/docs/Web/CSS/position) | take a box out of (or nudge it within) normal flow |
+
+### Extra theory: responsive design and media queries
+[Media queries](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries) apply CSS only when a condition is true. Bootstrap is **mobile first**: base styles are for small screens, and `@media (min-width: ...)` adds rules for bigger ones. Don't forget `<meta name="viewport" content="width=device-width, initial-scale=1">`, otherwise phones pretend to be desktop-wide.
+
+| Bootstrap [breakpoint](https://getbootstrap.com/docs/5.3/layout/breakpoints/) | Class infix | Min width |
+|---|---|---|
+| Extra small | (none) | <576px |
+| Small | `sm` | ≥576px |
+| Medium | `md` | ≥768px |
+| Large | `lg` | ≥992px |
+| Extra large | `xl` | ≥1200px |
+| Extra extra large | `xxl` | ≥1400px |
+
+### Extra theory: Bootstrap utilities and variables
+Bootstrap 5.3 ships [utility classes](https://getbootstrap.com/docs/5.3/utilities/api/) for spacing (`m-*`, `p-*`), [flex](https://getbootstrap.com/docs/5.3/utilities/flex/), [display](https://getbootstrap.com/docs/5.3/utilities/display/) and colours, and exposes [CSS variables](https://getbootstrap.com/docs/5.3/customize/css-variables/) like `--bs-primary`. You can override a variable in your own stylesheet without recompiling Sass, and switch themes with [color modes](https://getbootstrap.com/docs/5.3/customize/color-modes/) (`data-bs-theme="dark"`).
+
+| Spacing class | Meaning |
+|---|---|
+| `mt-3` | margin-top: 1rem |
+| `px-2` | padding left and right: 0.5rem |
+| `mb-0` | margin-bottom: 0 |
+| `gap-2` | gap between flex/grid items: 0.5rem |
+| `ms-auto` | margin-left: auto (push to the right) |
+
+```mermaid
+flowchart LR
+  Need[Need a style] --> U{Utility class exists?}
+  U -- yes --> UC[Use utility in HTML]
+  U -- no --> V{Is it a theme value?}
+  V -- yes --> CV[Override --bs-* variable]
+  V -- no --> OC[Write own class in app.css]
+```
+
+### Further reading / documentation
+- [MDN: CSS reference](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference)
+- [MDN: Cascade, specificity and inheritance](https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Cascade_and_inheritance)
+- [MDN: The box model](https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/The_box_model)
+- [MDN: Flexbox](https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout/Flexbox)
+- [MDN: CSS Grid layout](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout)
+- [MDN: Using media queries](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries)
+- [W3C CSS specifications overview](https://www.w3.org/Style/CSS/)
+- [Bootstrap 5.3: Introduction](https://getbootstrap.com/docs/5.3/getting-started/introduction/)
+- [Bootstrap 5.3: Grid system](https://getbootstrap.com/docs/5.3/layout/grid/)
+- [Bootstrap 5.3: Forms](https://getbootstrap.com/docs/5.3/forms/overview/)
+- [Bootstrap 5.3: Components (cards)](https://getbootstrap.com/docs/5.3/components/card/)
+- [Bootstrap 5.3: Accessibility](https://getbootstrap.com/docs/5.3/getting-started/accessibility/)

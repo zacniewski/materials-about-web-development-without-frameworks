@@ -208,6 +208,109 @@ curl -i http://localhost:3000/notes                   # 200 + [{"id":1,"text":"H
 curl -i -d "text=" http://localhost:3000/notes        # 422
 ```
 
+### More theory: the anatomy of an HTTP message
+
+Every HTTP/1.1 exchange is plain text over a TCP connection: a start line, headers, an empty line, and an optional body. Node parses this for you in the [`http` module](https://nodejs.org/api/http.html) and hands you an [`http.IncomingMessage`](https://nodejs.org/api/http.html#class-httpincomingmessage) (`req`) and an [`http.ServerResponse`](https://nodejs.org/api/http.html#class-httpserverresponse) (`res`). The protocol itself is described on [MDN: An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview) and [MDN: HTTP messages](https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages).
+
+```text
+POST /notes HTTP/1.1            <- request line: method, target, version
+Host: localhost:3000            <- headers
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 13
+                                <- empty line
+title=Buy+milk                  <- body
+```
+
+Node lowercases all incoming header names, so you read `req.headers['content-type']`, never `req.headers['Content-Type']`.
+
+### More theory: the event loop and why handlers must not block
+
+Node runs your JavaScript on a single thread. While a handler runs a long synchronous loop, *no other request is served*. I/O (sockets, files) is handed to the operating system and comes back as events. See [Node.js: The event loop, timers and process.nextTick()](https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick) and [Don't block the event loop](https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop).
+
+```mermaid
+sequenceDiagram
+    participant C1 as Client A
+    participant C2 as Client B
+    participant N as Node (one thread)
+    participant OS as OS / libuv
+    C1->>N: GET /file
+    N->>OS: fs.readFile (async)
+    C2->>N: GET /ping
+    N-->>C2: 200 pong (served while file loads)
+    OS-->>N: file data ready
+    N-->>C1: 200 file contents
+```
+
+Rule of thumb: use the async APIs ([`fs/promises`](https://nodejs.org/api/fs.html#promises-api), [streams](https://nodejs.org/api/stream.html)), never `readFileSync` inside a request handler.
+
+### More theory: status codes and headers you will use
+
+| Code | Name | When to use it |
+|------|------|----------------|
+| 200 | OK | Normal successful response |
+| 201 | Created | A `POST` created a resource (JSON APIs) |
+| 204 | No Content | Success with no body (e.g. `DELETE`) |
+| 303 | See Other | Redirect after a form `POST` (PRG) |
+| 304 | Not Modified | Cached copy is still valid |
+| 400 | Bad Request | Malformed input |
+| 404 | Not Found | No route / no resource |
+| 405 | Method Not Allowed | Route exists, method doesn't (send `Allow`) |
+| 413 | Content Too Large | Body exceeded your limit |
+| 500 | Internal Server Error | Unexpected bug |
+
+Full list: [MDN: HTTP response status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status).
+
+| Header | Direction | Purpose |
+|--------|-----------|---------|
+| `Content-Type` | both | Media type of the body ([MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)) |
+| `Content-Length` | both | Body size in bytes |
+| `Location` | response | Target of a redirect |
+| `Cache-Control` | response | Caching rules ([MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control)) |
+| `X-Content-Type-Options: nosniff` | response | Stop browsers guessing types ([MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options)) |
+
+### More theory: safe and idempotent methods
+
+| Method | Safe? | Idempotent? | Typical use |
+|--------|-------|-------------|-------------|
+| `GET` | yes | yes | Read a page/resource |
+| `HEAD` | yes | yes | Like GET, headers only |
+| `POST` | no | no | Create / submit a form |
+| `PUT` | no | yes | Replace a resource |
+| `PATCH` | no | no | Partially update |
+| `DELETE` | no | yes | Remove a resource |
+
+"Safe" means no side effects; "idempotent" means repeating it gives the same result. That is why browsers warn before re-sending a `POST` and why PRG exists. See [MDN: HTTP request methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) and [MDN: Idempotent](https://developer.mozilla.org/en-US/docs/Glossary/Idempotent).
+
+### More theory: a request's lifecycle inside the server
+
+```mermaid
+flowchart TD
+    A[TCP connection] --> B[Node parses request line + headers]
+    B --> C["'request' event: handler(req, res)"]
+    C --> D{Route match?}
+    D -- no --> E[404]
+    D -- yes --> F{Needs body?}
+    F -- yes --> G[Read stream with size limit]
+    G -- too big --> H[413]
+    G --> I[Parse: URLSearchParams / JSON.parse]
+    F -- no --> J[Handle]
+    I --> J
+    J --> K[res.writeHead + res.end]
+    J -- throws --> L[500 + log]
+```
+
+Parsing helpers: [`URL`](https://nodejs.org/api/url.html#the-whatwg-url-api), [`URLSearchParams`](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams), and [`path.normalize`/`path.resolve`](https://nodejs.org/api/path.html) for static files. Path traversal is explained in the [OWASP Path Traversal page](https://owasp.org/www-community/attacks/Path_Traversal).
+
+### More theory: graceful shutdown and timeouts
+
+A production server should stop accepting new connections and finish in-flight requests when it receives `SIGTERM`: call [`server.close()`](https://nodejs.org/api/http.html#serverclosecallback) inside a [`process.on('SIGTERM')`](https://nodejs.org/api/process.html#signal-events) handler. Node also has [`server.requestTimeout`](https://nodejs.org/api/http.html#serverrequesttimeout) and [`server.headersTimeout`](https://nodejs.org/api/http.html#serverheaderstimeout) to protect against slow clients.
+
+```js
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
+});
+```
+
 ### Common beginner mistakes
 - **Forgetting `res.end()`** — the browser spins forever.
 - **Calling `writeHead` after writing the body** → `ERR_HTTP_HEADERS_SENT`.
@@ -230,3 +333,20 @@ curl -i -d "text=" http://localhost:3000/notes        # 422
 3. Explain Post/Redirect/Get and the problem it solves.
 4. Show a request that exploits a static server without a path-traversal guard.
 5. What is the difference between `res.write` and `res.end`?
+
+### Further reading / documentation
+
+- [Node.js `http` module](https://nodejs.org/api/http.html)
+- [Node.js `stream` module](https://nodejs.org/api/stream.html)
+- [Node.js `fs` promises API](https://nodejs.org/api/fs.html#promises-api)
+- [Node.js `path` module](https://nodejs.org/api/path.html)
+- [Node.js WHATWG URL API](https://nodejs.org/api/url.html#the-whatwg-url-api)
+- [Node.js: The event loop](https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick)
+- [Node.js: Don't block the event loop](https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop)
+- [MDN: An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview)
+- [MDN: HTTP messages](https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages)
+- [MDN: HTTP request methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods)
+- [MDN: HTTP response status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
+- [MDN: Redirections in HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections)
+- [MDN: URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+- [OWASP: Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal)

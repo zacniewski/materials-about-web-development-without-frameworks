@@ -210,3 +210,119 @@ test('empty list gives 0', () => {
 3. Predict the output order of the snippet in section 2 and explain it.
 4. What is the difference between `dependencies` and `devDependencies`?
 5. Why must `package-lock.json` be committed?
+
+
+### Extra theory: the event loop phases in detail
+The official guide [The Node.js Event Loop](https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick) describes six phases. Between every callback, Node empties first the `process.nextTick` queue, then the Promise microtask queue.
+
+| Phase | What runs there |
+|---|---|
+| timers | callbacks of [`setTimeout` / `setInterval`](https://nodejs.org/docs/latest/api/timers.html) whose time has come |
+| pending callbacks | some deferred system errors (e.g. TCP `ECONNREFUSED`) |
+| idle, prepare | internal only |
+| poll | wait for new I/O and run I/O callbacks |
+| check | `setImmediate` callbacks |
+| close callbacks | e.g. `socket.on('close')` |
+
+```mermaid
+sequenceDiagram
+  participant JS as JS thread
+  participant Q as Microtask queues
+  participant L as libuv
+  participant OS as OS / thread pool
+  JS->>L: fs.readFile(cb)
+  L->>OS: read file (thread pool)
+  JS->>JS: continue with other code
+  OS-->>L: done
+  L->>JS: run cb in poll phase
+  JS->>Q: cb resolved a Promise
+  Q->>JS: run .then before next callback
+```
+
+| API | When it runs |
+|---|---|
+| [`process.nextTick`](https://nodejs.org/docs/latest/api/process.html#processnexttickcallback-args) | right after the current operation, before Promises |
+| `Promise.then` / `await` | after nextTick queue, before the loop continues |
+| `setImmediate` | in the next *check* phase |
+| `setTimeout(fn, 0)` | in the next *timers* phase (≥1 ms) |
+
+### Extra theory: ESM vs CommonJS
+Node supports two module systems ([ECMAScript modules docs](https://nodejs.org/docs/latest/api/esm.html), [CommonJS docs](https://nodejs.org/docs/latest/api/modules.html), [package `"type"` field](https://nodejs.org/docs/latest/api/packages.html#type)).
+
+| | ESM | CommonJS |
+|---|---|---|
+| Syntax | `import` / `export` | `require` / `module.exports` |
+| Enabled by | `.mjs` or `"type": "module"` | `.cjs` or default |
+| Loading | asynchronous, static analysis | synchronous, at runtime |
+| Top-level `await` | yes | no |
+| `__dirname` | use `import.meta.dirname` | available |
+| Standard | ECMAScript (also in browsers) | Node-specific |
+
+### Extra theory: semantic versioning and lock files
+npm uses [semantic versioning](https://semver.org/): `MAJOR.MINOR.PATCH`. A major bump may break you; minor adds features; patch fixes bugs. Ranges in [`package.json`](https://docs.npmjs.com/cli/configuring-npm/package-json) decide what npm may install, and [`package-lock.json`](https://docs.npmjs.com/cli/configuring-npm/package-lock-json) records the exact tree so that [`npm ci`](https://docs.npmjs.com/cli/commands/npm-ci) gives everyone the same versions.
+
+| Range | Allows | Example matches for `1.4.2` |
+|---|---|---|
+| `1.4.2` | exactly that | `1.4.2` |
+| `~1.4.2` | patch updates | `1.4.x` |
+| `^1.4.2` | minor + patch updates | `1.x.x` (≥1.4.2) |
+| `*` | anything | any (avoid) |
+
+```mermaid
+flowchart LR
+  PJ[package.json ranges] --> I[npm install]
+  I --> Lock[package-lock.json exact versions]
+  I --> NM[node_modules]
+  Lock --> CI[npm ci on another machine]
+  CI --> NM2[identical node_modules]
+```
+
+### Extra theory: errors in asynchronous code
+- Callback style passes the error first: `(err, data) => {}`.
+- Promise style rejects; use `try/catch` around `await`.
+- An unhandled rejection crashes the process in modern Node ([`--unhandled-rejections`](https://nodejs.org/docs/latest/api/cli.html#--unhandled-rejectionsmode)).
+- An `'error'` event on an [`EventEmitter`](https://nodejs.org/docs/latest/api/events.html) with no listener throws.
+See [Node.js errors documentation](https://nodejs.org/docs/latest/api/errors.html).
+
+### Extra theory: streams and backpressure
+[Streams](https://nodejs.org/docs/latest/api/stream.html) process data piece by piece instead of loading it all into memory. **Backpressure** means a fast producer waits when the consumer is slow; [`stream.pipeline`](https://nodejs.org/docs/latest/api/stream.html#streampipelinesource-transforms-destination-callback) handles this and errors for you.
+
+| Stream type | Example |
+|---|---|
+| Readable | `fs.createReadStream`, HTTP request (`req`) |
+| Writable | `fs.createWriteStream`, HTTP response (`res`) |
+| Duplex | TCP socket |
+| Transform | `zlib.createGzip()` |
+
+```js
+import { pipeline } from 'node:stream/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { createGzip } from 'node:zlib';
+
+await pipeline(createReadStream('big.log'), createGzip(), createWriteStream('big.log.gz'));
+```
+
+### Extra theory: useful built-in modules
+| Module | Use it for |
+|---|---|
+| [`node:fs/promises`](https://nodejs.org/docs/latest/api/fs.html#promises-api) | reading/writing files |
+| [`node:path`](https://nodejs.org/docs/latest/api/path.html) | joining paths safely across OSes |
+| [`node:http`](https://nodejs.org/docs/latest/api/http.html) | HTTP servers and clients |
+| [`node:url`](https://nodejs.org/docs/latest/api/url.html) | parsing URLs (`new URL()`) |
+| [`node:crypto`](https://nodejs.org/docs/latest/api/crypto.html) | hashing, random IDs (`randomUUID`) |
+| [`node:test`](https://nodejs.org/docs/latest/api/test.html) | built-in test runner |
+| [`node:worker_threads`](https://nodejs.org/docs/latest/api/worker_threads.html) | CPU-heavy work off the main thread |
+
+### Further reading / documentation
+- [Node.js documentation (latest API)](https://nodejs.org/docs/latest/api/)
+- [Node.js Learn: Introduction to Node.js](https://nodejs.org/en/learn/getting-started/introduction-to-nodejs)
+- [Node.js Learn: The event loop, timers and `process.nextTick()`](https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick)
+- [Node.js Learn: Don't block the event loop](https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop)
+- [Node.js: ECMAScript modules](https://nodejs.org/docs/latest/api/esm.html)
+- [Node.js: Events](https://nodejs.org/docs/latest/api/events.html)
+- [Node.js: Stream](https://nodejs.org/docs/latest/api/stream.html)
+- [libuv documentation](https://docs.libuv.org/en/v1.x/)
+- [npm Docs](https://docs.npmjs.com/)
+- [npm: package.json](https://docs.npmjs.com/cli/configuring-npm/package-json)
+- [Semantic Versioning 2.0.0](https://semver.org/)
+- [MDN: JavaScript modules](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules)
